@@ -1,0 +1,33 @@
+- slug: simple-print
+  name: Simple Print Test
+  requirements:
+    expression-engine: jinja
+    executor:
+      docker:
+        image: public.ecr.aws/s4q6j6e8/resolwe/base:ubuntu-20.04
+  data_name: 'Simple print test'
+  version: 1.0.0
+  type: data:test:print
+  category: test
+  persistence: TEMP
+  description: >
+    A very simple process that just prints hello world using Docker containers.
+  input:
+    - name: message
+      label: Message to print
+      type: basic:string
+      default: "Hello World"
+  output:
+    - name: result
+      label: Print result
+      type: basic:string
+  run:
+    runtime: polyglot
+    language: bash
+    program: |
+      echo "Starting simple print process..."
+      echo "Message: {{ message }}"
+      echo "Current directory: $(pwd)"
+      echo "Date: $(date)"
+      re-save result "Printed: {{ message }}"
+      echo "Simple print process completed!"

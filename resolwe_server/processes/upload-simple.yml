@@ -1,0 +1,27 @@
+- slug: upload-simple
+  name: Simple File Upload
+  requirements:
+    expression-engine: jinja
+  data_name: 'Simple upload: {{ src.file }}'
+  version: 1.0.0
+  type: data:test:upload
+  category: test
+  persistence: TEMP
+  description: >
+    A simple file upload process that works without Docker.
+  input:
+    - name: src
+      label: Source file
+      type: basic:file
+  output:
+    - name: result
+      label: Upload result
+      type: basic:string
+  run:
+    runtime: polyglot
+    language: bash
+    program: |
+      echo "Uploading file: {{ src.file }}"
+      echo "File size: $(wc -c < {{ src.file_temp }})"
+      re-save result "File {{ src.file }} uploaded successfully"
+      echo "Upload completed!"

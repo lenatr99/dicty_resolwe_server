@@ -1,0 +1,26 @@
+- slug: test-data-generator
+  name: Test Data Generator Process
+  requirements:
+    expression-engine: jinja
+  data_name: 'Generated data for {{ sample_name }}'
+  version: 1.0.0
+  type: data:test:output
+  category: test
+  persistence: TEMP
+  description: >
+    A simple test process that generates sample data without Docker.
+  input:
+    - name: sample_name
+      label: Sample name
+      type: basic:string
+      default: "test_sample"
+  output:
+    - name: result
+      label: Test result
+      type: basic:string
+  run:
+    runtime: polyglot
+    language: bash
+    program: |
+      echo "Process completed for {{ sample_name }}"
+      re-save result "Process completed successfully for {{ sample_name }}"

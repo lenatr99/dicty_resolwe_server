@@ -1,0 +1,27 @@
+- slug: simple-success
+  name: Simple Success Process
+  requirements:
+    expression-engine: jinja
+  data_name: 'Simple success for {{ message }}'
+  version: 1.0.0
+  type: data:test:simple
+  category: test
+  persistence: TEMP
+  description: >
+    A super simple process that just succeeds without any file operations.
+  input:
+    - name: message
+      label: Message
+      type: basic:string
+      default: "hello world"
+  output:
+    - name: greeting
+      label: Greeting message
+      type: basic:string
+  run:
+    runtime: polyglot
+    language: bash
+    program: |
+      echo "Starting simple process with message: {{ message }}"
+      re-save greeting "Hello from Resolwe! Message was: {{ message }}"
+      echo "Process completed successfully!"
