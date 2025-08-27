@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`geneInformation > should render as default snapshot 1`] = `
+<DocumentFragment>
+  <div
+    class="sc-gJhJTp kMHQvz"
+  >
+    <div
+      class="sc-elDIKY naXCM"
+    >
+      <h3
+        class="sc-fQpRED givOwf"
+      >
+        Gene information
+      </h3>
+      <button
+        class="MuiButtonBase-root-ocQuz kiSjtm MuiButtonBase-root MuiButton-root MuiButton-contained MuiButton-containedSecondary MuiButton-sizeSmall MuiButton-containedSizeSmall MuiButton-colorSecondary MuiButton-root-jMlkZG ceGgqh MuiButton-root MuiButton-contained MuiButton-containedSecondary MuiButton-sizeSmall MuiButton-containedSizeSmall MuiButton-colorSecondary"
+        tabindex="0"
+        type="button"
+      >
+        Highlight
+        <span
+          class="MuiTouchRipple-root-huKFMv dxeyKA MuiTouchRipple-root"
+        />
+      </button>
+    </div>
+    <p>
+      TestGene0
+    </p>
+    <div>
+      <div
+        class="sc-dsLQwm jsjqqF"
+      >
+        Gene ID:
+      </div>
+      <div
+        class="sc-iKTcqh cRJFCK"
+      >
+        0
+      </div>
+    </div>
+    <div>
+      <div
+        class="sc-dsLQwm jsjqqF"
+      >
+        Alternatives:
+      </div>
+      <div
+        class="sc-iKTcqh cRJFCK"
+      >
+        TestGene0_alias1, TestGene0_alias2
+      </div>
+    </div>
+    <div>
+      <div
+        class="sc-dsLQwm jsjqqF"
+      >
+        Database link:
+      </div>
+      <div
+        class="sc-iKTcqh cRJFCK"
+      >
+        <a
+          href="http://dictybase.org/gene/0"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Open in dictyBase
+          <img
+            alt="Open in dictyBase."
+            class="sc-gnpbhQ kdvbuV"
+            src="/images/dictybase_logo2.jpg"
+          />
+        </a>
+      </div>
+    </div>
+    <div>
+      <div
+        class="sc-dsLQwm jsjqqF"
+      >
+        Description:
+      </div>
+      <div
+        class="sc-iKTcqh cRJFCK"
+      >
+        This is a test gene 0
+      </div>
+    </div>
+  </div>
+</DocumentFragment>
+`;

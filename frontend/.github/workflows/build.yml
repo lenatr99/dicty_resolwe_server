@@ -1,0 +1,69 @@
+name: Dictyexpress-js build
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_IAM_ROLE: ${{ vars.AWS_IAM_ROLE }}
+  AWS_REGION: us-east-1
+  NODE_VERSION: 20
+  S3_BUCKET: genialis-share-ci-artifact-eu-west-1
+  S3_BUCKET_PREFIX: dictyexpress-js
+
+jobs:
+  build:
+    runs-on: public-docker-runner
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_IAM_ROLE }}
+          role-session-name: GithubOIDCSession
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Select Node v${{ env.NODE_VERSION }}
+        shell: bash -l {0}
+        run: |
+          nvm use ${{ env.NODE_VERSION }}
+          echo "PATH=$(echo $PATH)" >> "$GITHUB_ENV"
+      - name: Generate environment variables
+        run: |
+          # All triggers.
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="dev-${SHORT_SHA}"
+
+          # Override VERSION in tagged commits.
+          if ${{ github.ref_type == 'tag' }};
+          # Do not wrap conditions in brackets or quotes here, since bash would evaluate it as a string.
+          then
+            VERSION=${{ github.ref_name }}
+          fi
+
+          # Set environment for later steps.
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "FILENAME=dictyexpress-js-$VERSION.tar.gz" >> $GITHUB_ENV
+      - name: Install NPM packages
+        run: yarn
+      - name: Build bundle
+        env:
+          VITE_APP_VERSION: ${{ env.VERSION }}
+          NODE_OPTIONS: "--max_old_space_size=4096"
+        run: yarn build
+      - name: Compress the build folder
+        run: tar -czf ${{ env.FILENAME }} ./build/
+      - name: Copy the bundle to the S3 bucket
+        run: |
+          aws s3 cp ${{ env.FILENAME }} s3://${{ env.S3_BUCKET }}/${{ env.S3_BUCKET_PREFIX }}/${{ env.FILENAME }}

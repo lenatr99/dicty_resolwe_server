@@ -9,7 +9,7 @@ import sys
 import django
 
 # Set up Django environment
-sys.path.insert(0, '/Users/lenatrnovec/dicty_resolwe_server')
+sys.path.insert(0, '/Users/lenatrnovec/backend')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "resolwe_server.settings")
 django.setup()
 

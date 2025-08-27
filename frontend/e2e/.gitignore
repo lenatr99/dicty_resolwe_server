@@ -1,0 +1,8 @@
+state.json
+artifacts
+.pytest_cache
+downloaded_files
+email_verification/credentials.json
+email_verification/token.json
+email_verification/email_data*.json
+__pycache__

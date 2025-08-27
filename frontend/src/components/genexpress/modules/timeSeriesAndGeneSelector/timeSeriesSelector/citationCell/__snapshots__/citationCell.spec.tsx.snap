@@ -1,0 +1,24 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`citationCell > should render as default snapshot 1`] = `
+<DocumentFragment>
+  <div
+    class="sc-gJhJTp fonkkw MuiBox-root"
+  >
+    <button
+      class="MuiButtonBase-root-ocQuz kiSjtm MuiButtonBase-root"
+      tabindex="0"
+      type="button"
+    >
+      <a
+        class="MuiTypography-root-hJQhZH cagcOC MuiTypography-root MuiTypography-inherit MuiLink-root-efECBU drMBtS MuiLink-root MuiLink-underlineAlways"
+      >
+        Rosengarten et. al.
+      </a>
+      <span
+        class="MuiTouchRipple-root-huKFMv dxeyKA MuiTouchRipple-root"
+      />
+    </button>
+  </div>
+</DocumentFragment>
+`;

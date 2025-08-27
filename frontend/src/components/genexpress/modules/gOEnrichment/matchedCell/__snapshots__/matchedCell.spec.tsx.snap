@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`gOEnrichmentMatchedCell > should render as default snapshot 1`] = `
+<DocumentFragment>
+  <div
+    class="sc-jCbFiK hkFjrU"
+  >
+    <button
+      class="MuiButtonBase-root-ocQuz kiSjtm MuiButtonBase-root MuiButton-root MuiButton-text MuiButton-textSecondary MuiButton-sizeMedium MuiButton-textSizeMedium MuiButton-colorSecondary MuiButton-fullWidth MuiButton-root-jMlkZG hGfmia MuiButton-root MuiButton-text MuiButton-textSecondary MuiButton-sizeMedium MuiButton-textSizeMedium MuiButton-colorSecondary MuiButton-fullWidth sc-cBYhjr hXKyFk"
+      tabindex="0"
+      type="button"
+    >
+      12/250
+      <span
+        class="MuiTouchRipple-root-huKFMv dxeyKA MuiTouchRipple-root"
+      />
+    </button>
+  </div>
+</DocumentFragment>
+`;

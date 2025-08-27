@@ -1,0 +1,127 @@
+name: Dictyexpress-js deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      DOMAIN:
+        default: "test.dictyexpress.org"
+        type: choice
+        options:
+        - "test.dictyexpress.org"
+        - "qa.dictyexpress.org"
+      RELEASE_TAG:
+        default: "1.0.1"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARTIFACT_ROLE: arn:aws:iam::396487289173:role/genialis-share-ci-github-artifact
+  ARTIFACT_REGION: eu-west-1
+  ARTIFACT_S3_BUCKET: genialis-share-ci-artifact-eu-west-1
+  ARTIFACT_S3_BUCKET_PREFIX: dictyexpress-js
+  AWS_BUCKET_REGION: us-east-1
+
+jobs:
+  artifact:
+    runs-on: public-docker-runner
+    outputs:
+      bundle-artifact: ${{ steps.bundle-artifact-upload-step.outputs.artifact-id }}
+      django-static: ${{ steps.django-static-upload-step.outputs.artifact-id }}
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ARTIFACT_ROLE }}
+          role-session-name: GithubOIDCSession
+          aws-region: ${{ env.ARTIFACT_REGION }}
+
+      - name: Set artifact filename environment variables
+        id: artifact-env
+        shell: bash
+        run: |
+          BUNDLE_FILENAME="${{ env.ARTIFACT_S3_BUCKET_PREFIX }}-${{ inputs.RELEASE_TAG }}.tar.gz"
+          BUNDLE_PATH="s3://${{ env.ARTIFACT_S3_BUCKET }}/${{ env.ARTIFACT_S3_BUCKET_PREFIX }}/${BUNDLE_FILENAME}"
+          DJANGO_STATIC_FILENAME="django-static.tar.gz"
+          DJANGO_STATIC_BUNDLE_PATH="s3://${{ env.ARTIFACT_S3_BUCKET }}/django-static/${DJANGO_STATIC_FILENAME}"
+          aws s3 cp ${BUNDLE_PATH} ${BUNDLE_FILENAME}
+          aws s3 cp ${DJANGO_STATIC_BUNDLE_PATH} ${DJANGO_STATIC_FILENAME}
+          echo "BUNDLE_FILENAME=${BUNDLE_FILENAME}" >> "$GITHUB_ENV"
+          echo "DJANGO_STATIC_FILENAME=$DJANGO_STATIC_FILENAME" >> "$GITHUB_ENV"
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        id: bundle-artifact-upload-step
+        with:
+          name: bundle-artifact
+          path: ${{ env.BUNDLE_FILENAME }}
+          retention-days: 1
+          overwrite: true
+
+      - name: Upload django static artifact
+        uses: actions/upload-artifact@v4
+        id: django-static-upload-step
+        with:
+          name: django-static-artifact
+          path: ${{ env.DJANGO_STATIC_FILENAME }}
+          retention-days: 1
+          overwrite: true
+
+  build:
+    runs-on: public-docker-runner
+    needs: artifact
+    steps:
+      - name: Download bundle artifact
+        uses: actions/download-artifact@v4
+        id: bundle-download-step
+        with:
+          name: bundle-artifact
+
+      - name: Download django static artifact
+        uses: actions/download-artifact@v4
+        id: django-static-download-step
+        with:
+          name: django-static-artifact
+
+      # Set the S3_BUCKET and AWS_IAM_ROLE environment variables based on DOMAIN input
+      - name: Set environment variables
+        id: bucket-env
+        shell: bash
+        run: |
+          if [ "${{ inputs.DOMAIN }}" == "test.dictyexpress.org" ]; then
+            echo "S3_BUCKET=genialis-dev-test-dictyexpress-us-east-1" >> $GITHUB_ENV
+            AWS_IAM_ROLE="arn:aws:iam::342286153875:role/genialis-dev-test-github-dictyexpress-js"
+            echo "AWS_IAM_ROLE=${AWS_IAM_ROLE}" >> $GITHUB_ENV
+          elif [ "${{ inputs.DOMAIN }}" == "qa.dictyexpress.org" ]; then
+            echo "S3_BUCKET=genialis-stage-qa-dictyexpress-us-east-1" >> $GITHUB_ENV
+            AWS_IAM_ROLE="arn:aws:iam::736780930532:role/genialis-stage-qa-github-dictyexpress-js"
+            echo "AWS_IAM_ROLE=${AWS_IAM_ROLE}" >> $GITHUB_ENV
+          else
+            echo "Invalid DOMAIN input" >&2
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_IAM_ROLE }}
+          role-session-name: GithubOIDCSession
+          aws-region: ${{ env.AWS_BUCKET_REGION }}
+
+      - name: Copy the files to Frontend bucket
+        id: sync-bucket
+        shell: bash
+        run: |
+          aws sts get-caller-identity
+          echo "Listing directory..."
+          ls -R
+          BUNDLE_FILENAME="${{ env.ARTIFACT_S3_BUCKET_PREFIX }}-${{ inputs.RELEASE_TAG }}.tar.gz"
+          DJANGO_STATIC_FILENAME="django-static.tar.gz"
+          tar xzf ${BUNDLE_FILENAME}
+          tar xzf ${DJANGO_STATIC_FILENAME}
+          mv django_static/ build/
+          # Ensures that index.html is copied during rollbacks
+          touch build/index.html
+          aws s3 sync --delete --exclude "config.js" "build/" "s3://${S3_BUCKET}/"
