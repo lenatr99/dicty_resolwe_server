@@ -1,0 +1,47 @@
+#!/bin/sh
+
+# Prevent push of commits where the log message starts with a lower case.
+
+remote="$1"
+url="$2"
+protected_branch='master'
+current_branch=$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
+
+z40=0000000000000000000000000000000000000000
+start_commit="1c698e2"
+
+while read local_ref local_sha remote_ref remote_sha
+do
+	if [ "$local_sha" = $z40 ]
+	then
+		# Handle delete
+		:
+	else
+		if [ $protected_branch = $current_branch ]
+		then
+			if [ "$remote_sha" = $z40 ]
+			then
+				# New branch, examine all commits from the start_commit onwards
+				range="$start_commit..$local_sha"
+			else
+				# Update to existing branch, examine new commits from the start_commit onwards
+				range="$start_commit..$local_sha"
+			fi
+		
+			# Throw error when git and changelog can't be validated
+			wrongCommits=`git log --format=%s "$range" | grep '^[a-z]'`
+			if [ -n "$wrongCommits" ]
+			then
+				echo >&2 "Found unsquashed temporary commits! (their commit message doesnt start with uppercase A-Z):
+$wrongCommits"
+				exit 1
+			fi
+		else
+			exit 0 # push will execute
+		fi
+		
+		exit 0
+	fi
+done
+
+exit 0

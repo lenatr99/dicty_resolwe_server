@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`gOEnrichmentScoreCell > should render as default snapshot 1`] = `
+<DocumentFragment>
+  <div
+    class="sc-jCbFiK hkFjrU"
+  >
+    <span
+      aria-valuemax="100"
+      aria-valuemin="0"
+      aria-valuenow="0"
+      class="MuiLinearProgress-root-inRFPM jaInd MuiLinearProgress-root MuiLinearProgress-colorSecondary MuiLinearProgress-determinate sc-jzjKHc fYaqHH"
+      role="progressbar"
+    >
+      <span
+        class="MuiLinearProgress-bar1-ehbycK cgFaLI MuiLinearProgress-bar MuiLinearProgress-barColorSecondary MuiLinearProgress-bar1Determinate"
+        style="transform: translateX(-100%);"
+      />
+    </span>
+    <span
+      class="sc-cBYhjr dIaTId"
+    >
+      12.00
+    </span>
+  </div>
+</DocumentFragment>
+`;

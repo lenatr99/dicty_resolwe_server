@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`gOEnrichmentTermCell > should render as default snapshot 1`] = `
+<DocumentFragment>
+  <div
+    class="sc-braxZu ciisdu"
+  >
+    <span
+      class="sc-gJhJTp jOlInc"
+    />
+    <svg
+      aria-hidden="true"
+      class="MuiSvgIcon-root-kxJCyd dhFBup MuiSvgIcon-root MuiSvgIcon-fontSizeMedium sc-elDIKY cngcVL"
+      data-testid="ArrowDropDownIcon"
+      focusable="false"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="m7 10 5 5 5-5z"
+      />
+    </svg>
+    <span>
+      Test term
+    </span>
+  </div>
+</DocumentFragment>
+`;

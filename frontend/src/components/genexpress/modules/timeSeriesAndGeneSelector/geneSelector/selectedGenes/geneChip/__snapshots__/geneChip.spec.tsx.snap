@@ -1,0 +1,59 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`geneChip > should render as highlighted snapshot 1`] = `
+<DocumentFragment>
+  <div>
+    <div
+      class="MuiButtonBase-root-ocQuz kiSjtm MuiButtonBase-root MuiChip-root-kftqHe kVRucg MuiChip-root MuiChip-filled MuiChip-sizeSmall MuiChip-colorSecondary MuiChip-clickable MuiChip-clickableColorSecondary MuiChip-deletable MuiChip-deletableColorSecondary MuiChip-filledSecondary sc-gJhJTp bFSDEa"
+      role="button"
+      tabindex="0"
+    >
+      <span
+        class="MuiChip-label-kjXrLK inZsDX MuiChip-label MuiChip-labelSmall"
+      >
+        TestGene0
+      </span>
+      <svg
+        aria-hidden="true"
+        class="MuiSvgIcon-root-kxJCyd dhFBup MuiSvgIcon-root MuiSvgIcon-fontSizeMedium MuiChip-deleteIcon MuiChip-deleteIconSmall MuiChip-deleteIconColorSecondary MuiChip-deleteIconFilledColorSecondary"
+        data-testid="CancelIcon"
+        focusable="false"
+        viewBox="0 0 24 24"
+      >
+        <path
+          d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"
+        />
+      </svg>
+    </div>
+  </div>
+</DocumentFragment>
+`;
+
+exports[`geneChip > should render the same as default snapshot 1`] = `
+<DocumentFragment>
+  <div>
+    <div
+      class="MuiButtonBase-root-ocQuz kiSjtm MuiButtonBase-root MuiChip-root-kftqHe bBnsrt MuiChip-root MuiChip-filled MuiChip-sizeSmall MuiChip-colorDefault MuiChip-clickable MuiChip-clickableColorDefault MuiChip-deletable MuiChip-deletableColorDefault MuiChip-filledDefault sc-gJhJTp bFSDEa"
+      role="button"
+      tabindex="0"
+    >
+      <span
+        class="MuiChip-label-kjXrLK inZsDX MuiChip-label MuiChip-labelSmall"
+      >
+        TestGene0
+      </span>
+      <svg
+        aria-hidden="true"
+        class="MuiSvgIcon-root-kxJCyd dhFBup MuiSvgIcon-root MuiSvgIcon-fontSizeMedium MuiChip-deleteIcon MuiChip-deleteIconSmall MuiChip-deleteIconColorDefault MuiChip-deleteIconFilledColorDefault"
+        data-testid="CancelIcon"
+        focusable="false"
+        viewBox="0 0 24 24"
+      >
+        <path
+          d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"
+        />
+      </svg>
+    </div>
+  </div>
+</DocumentFragment>
+`;
