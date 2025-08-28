@@ -12,6 +12,7 @@ import DifferentialExpressions from './modules/differentialExpressions/different
 import GOEnrichment from './modules/gOEnrichment/gOEnrichment';
 import Clustering from './modules/clustering/clustering';
 import GenesExpressions from './modules/genesExpressions/genesExpressions';
+import UmapVisualization from './modules/umapVisualization';
 import { DictyUrlQueryParameter, LayoutBreakpoint, ModulesKeys } from './common/constants';
 import { ResponsiveGridLayoutContainer } from './geneExpressGrid.styles';
 import useBrowserVisibility from './common/useBrowserVisibility';
@@ -189,6 +190,17 @@ const GeneExpressGrid = ({
                             <SingleCellSeriesSelector />
                         </DictyModule>
                     </div> */}
+                    <div key={ModulesKeys.umapVisualization}>
+                        <DictyModule
+                            title="UMAP Visualization"
+                            isLoading={false}
+                        >
+                            <UmapVisualization 
+                                storageId={38} 
+                                geneExpressionsStorageId={39}
+                            />
+                        </DictyModule>
+                    </div>
                 </ResponsiveGridLayout>
             </ResponsiveGridLayoutContainer>
         </>

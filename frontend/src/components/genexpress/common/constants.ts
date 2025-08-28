@@ -10,6 +10,7 @@ export enum ModulesKeys {
     differentialExpressions = 'differentialExpressions',
     gOEnrichment = 'gOEnrichment',
     clustering = 'clustering',
+    umapVisualization = 'umapVisualization',
 }
 
 export enum LayoutBreakpoint {

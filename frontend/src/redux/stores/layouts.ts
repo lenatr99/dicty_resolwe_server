@@ -126,6 +126,16 @@ const getBreakpointLayouts = (breakpoint: LayoutBreakpoint): Layout[] => {
                 small: defaultBreakpointCols.small,
             }[breakpoint],
         ),
+        generateModuleLayout(
+            ModulesKeys.umapVisualization,
+            breakpoint,
+            availableSpaceInCols,
+            {
+                large: 6,
+                mid: 4,
+                small: defaultBreakpointCols.small,
+            }[breakpoint],
+        ),
     ];
 };
 
