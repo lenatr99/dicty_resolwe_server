@@ -159,12 +159,27 @@ while aligned_reads.status != "OK":
 if aligned_reads.status == "OK":
     print(f"✅ Successfully created alignment process: {aligned_reads.id}")
 
-    mappa = res.run(
-        slug="upload-mappability",
-        input={"src": "purpureum_mappability_50.tab.gz"},
-        collection=test_collection,
-    )
-    print(f"✅ Successfully created mappability process: {mappa.id}")
+mappa = res.run(
+    slug="upload-mappability",
+    input={"src": "purpureum_mappability_50.tab.gz"},
+    collection=test_collection,
+)
+print(f"✅ Successfully created mappability process: {mappa.id}")
+
+while mappa.status != "OK":
+    if mappa.status == "ER":
+        print(f"❌ Mappability process failed with status: {mappa.status}")
+        break
+    print(f"📊 Current status: {mappa.status}")
+    time.sleep(2)
+    mappa.update()
+
+if mappa.status == "OK":
+    print(f"✅ Successfully created mappability: {mappa.output}")
+else:
+    print(f"❌ Mappability failed with status: {mappa.status}")
+    print(f"❌ Mappability failed with error: {mappa.process_error}")
+
 
 
 inputs = {

@@ -93,9 +93,9 @@ ASGI_APPLICATION = "resolwe_server.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="resolwe_server"),
-        "USER": config("DB_USER", default="resolwe_server"),
-        "PASSWORD": config("DB_PASSWORD", default=""),
+        "NAME": config("DB_NAME", default="resolwe"),
+        "USER": config("DB_USER", default="resolwe"),
+        "PASSWORD": config("DB_PASSWORD", default="resolwe"),
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
     }
@@ -133,6 +133,11 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# File upload settings for large files (like 3.6GB h5ad files)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
+FILE_UPLOAD_PERMISSIONS = 0o644
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development

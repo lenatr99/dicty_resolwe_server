@@ -8,13 +8,17 @@ from django.views.decorators.http import require_http_methods
 from rest_framework import routers, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.middleware.csrf import get_token
 import json
 
 from resolwe.api_urls import api_router as resolwe_router
 from resolwe.flow.views import EntityViewSet
+from .views import UserViewSet, DifferentialExpressionViewSet, BasketViewSet, BasketExpressionsViewSet, GeneListByIdsViewSet
 
 from resolwe_bio.filters import BioEntityFilter
-from resolwe_bio.kb.views import FeatureViewSet, MappingSearchViewSet
+from resolwe_bio.kb.views import MappingSearchViewSet
+from .views import CustomFeatureViewSet
 from resolwe_bio.variants.views import (
     VariantAnnotationViewSet,
     VariantCallViewSet,
@@ -58,18 +62,30 @@ def current_user(request):
 def upload_config(request):
     """Return upload configuration."""
     return Response({
-        "chunk_size": 1048576,  # 1MB chunks
-        "upload_url": "/data/",
-        "max_file_size": 1073741824,  # 1GB max file size
+        "chunk_size": 10485760,  # 10MB chunks (larger chunks for big files)
+        "upload_url": "/upload/",  # Use our working upload endpoint
+        "max_file_size": 10737418240,  # 10GB max file size (increased from 1GB)
     })
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def upload_file(request):
-    """Handle file upload endpoint."""
+    """Handle file upload endpoint with resdk chunked upload support."""
     try:
-        # Get file from request
+        # Check if this is a resdk chunked upload
+        session_id = request.headers.get('Session-Id')
+        file_uid = request.headers.get('X-File-Uid')
+        chunk_number = request.POST.get('_chunkNumber')
+        total_size = request.POST.get('_totalSize')
+        current_chunk_size = request.POST.get('_currentChunkSize')
+        
+        if session_id and file_uid and chunk_number is not None:
+            return handle_resdk_chunked_upload(request, session_id, file_uid, 
+                                             int(chunk_number), int(total_size), 
+                                             int(current_chunk_size))
+        
+        # Regular single file upload
         if 'file' in request.FILES:
             uploaded_file = request.FILES['file']
             
@@ -95,7 +111,82 @@ def upload_file(request):
             return JsonResponse({"error": "No file provided"}, status=400)
             
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        import traceback
+        return JsonResponse({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }, status=500)
+
+
+def handle_resdk_chunked_upload(request, session_id, file_uid, chunk_number, total_size, current_chunk_size):
+    """Handle resdk's chunked upload protocol."""
+    import os
+    from django.conf import settings
+    
+    if 'file' not in request.FILES:
+        return JsonResponse({"error": "No chunk data provided"}, status=400)
+    
+    chunk_file = request.FILES['file']
+    file_name = chunk_file.name
+    
+    # Create temp directory for this upload session
+    upload_dir = settings.FLOW_EXECUTOR["UPLOAD_DIR"]
+    temp_dir = os.path.join(upload_dir, "temp_uploads", file_uid)
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Save this chunk
+    chunk_path = os.path.join(temp_dir, f"chunk_{chunk_number:05d}")
+    with open(chunk_path, 'wb') as f:
+        for data in chunk_file.chunks():
+            f.write(data)
+    
+    # Check current total size of received chunks
+    current_total = 0
+    chunk_files = []
+    chunk_index = 0
+    
+    while True:
+        chunk_file_path = os.path.join(temp_dir, f"chunk_{chunk_index:05d}")
+        if os.path.exists(chunk_file_path):
+            chunk_files.append(chunk_file_path)
+            current_total += os.path.getsize(chunk_file_path)
+            chunk_index += 1
+        else:
+            break
+    
+    # Check if upload is complete
+    if current_total >= total_size:
+        # All chunks received, assemble the file
+        final_path = os.path.join(upload_dir, file_name)
+        
+        with open(final_path, 'wb') as final_file:
+            for chunk_file_path in sorted(chunk_files):
+                with open(chunk_file_path, 'rb') as cf:
+                    final_file.write(cf.read())
+        
+        # Clean up temp chunks
+        import shutil
+        shutil.rmtree(temp_dir)
+        
+        # Verify final file size
+        final_size = os.path.getsize(final_path)
+        
+        return JsonResponse({
+            "files": [{
+                "temp": file_name,
+                "file_path": final_path,
+                "size": final_size,
+            }]
+        })
+    else:
+        # More chunks needed
+        return JsonResponse({
+            "status": "chunk_received",
+            "chunk_number": chunk_number,
+            "received_size": current_total,
+            "total_size": total_size,
+            "progress": f"{current_total/total_size*100:.1f}%"
+        })
 
 
 @csrf_exempt
@@ -150,6 +241,11 @@ def saml_auth_api_login(request):
         
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
+    
+# --- CSRF token view ---
+@ensure_csrf_cookie
+def csrf_token_view(request):
+    return JsonResponse({"csrfToken": get_token(request)})
 
 EntityViewSet.filterset_class = BioEntityFilter
 
@@ -159,9 +255,26 @@ api_router.register(r"variant", VariantViewSet)
 api_router.register(r"variant_annotations", VariantAnnotationViewSet)
 api_router.register(r"variant_calls", VariantCallViewSet)
 api_router.register(r"variant_experiment", VariantExperimentViewSet)
+api_router.register(
+    r"_modules/differential_expression/list",
+    DifferentialExpressionViewSet,
+    basename="diffexp-list",
+)
+api_router.register(r"basket", BasketViewSet, basename="basket")
+api_router.register(
+    r"_modules/visualizations/basket_expressions",
+    BasketExpressionsViewSet,
+    basename="basket-expr",
+)
+api_router.register(
+    r"_modules/gene_list/list_by_ids",
+    GeneListByIdsViewSet,
+    basename="gene-list-by-ids",
+)
+
 
 search_router = SearchRouter(trailing_slash=False)
-search_router.register(r"kb/feature", FeatureViewSet, "kb_feature")
+search_router.register(r"kb/feature", CustomFeatureViewSet, "kb_feature")
 search_router.register(r"kb/mapping/search", MappingSearchViewSet, "kb_mapping_search")
 
 urlpatterns = [
@@ -186,4 +299,5 @@ urlpatterns = [
             )
         ),
     ),
+    path("api/base/csrf", csrf_token_view, name="csrf_token"),
 ]

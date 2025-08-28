@@ -1,1 +1,3 @@
 backend/data/
+*.h5ad
+*.h5ad.gz
