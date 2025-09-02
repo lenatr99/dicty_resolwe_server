@@ -13,6 +13,7 @@ import samplesExpressions, {
     getSamplesExpressionsById,
     getSamplesExpressionsSamplesIds,
 } from 'redux/stores/samplesExpressions';
+import singleCellSeries from 'redux/stores/singleCellSeries';
 import notifications from 'redux/stores/notifications';
 import authentication from 'redux/stores/authentication';
 import differentialExpressions from 'redux/stores/differentialExpressions';
@@ -27,6 +28,7 @@ const rootReducer = combineReducers({
     genes,
     genesSimilarities,
     samplesExpressions,
+    singleCellSeries,
     differentialExpressions,
     gOEnrichment,
     notifications,
@@ -60,6 +62,7 @@ const getTimeSeriesGenesExpressions = (
     console.log('  Labels (time points):', labels);
     console.log('  Selected genes:', selectedGenes.map(g => g.name));
     console.log('  Samples available:', samplesExpressionsSamplesIds.length);
+    console.log('  Samples:', samplesExpressionsSamplesIds);
     console.log('  Expression storage keys:', Object.keys(samplesExpressionsById).length);
     
     if (

@@ -11,6 +11,7 @@ import gOEnrichmentEpics from './gOEnrichmentEpics';
 import gafEpics from './gafEpics';
 import findSimilarGenesEpics from './findSimilarGenesEpics';
 import samplesExpressionsEpics from './samplesExpressionsEpics';
+import singleCellExpressionsEpics from './singleCellExpressionsEpics';
 import differentialExpressionsEpics from './differentialExpressionsEpics';
 import ontologyOboEpics from './ontologyOboEpics';
 import { logError } from 'utils/errorUtils';
@@ -31,6 +32,7 @@ const rootEpic: Epic<Action, Action, RootState> = (
         gOEnrichmentEpics,
         findSimilarGenesEpics,
         samplesExpressionsEpics,
+        singleCellExpressionsEpics,
         differentialExpressionsEpics,
         ontologyOboEpics,
     )(action$, store$, dependencies).pipe(
