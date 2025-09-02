@@ -4,7 +4,8 @@
 
 ### 1. Start Docker Services
 ```bash
-cd backend && docker compose up
+cd backend
+docker compose up
 ```
 
 ### 2. Initialize Database (new terminal)

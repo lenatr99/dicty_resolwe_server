@@ -13,3 +13,9 @@ export const getTimeSeriesRelations = async (): Promise<Relation[]> => {
 
     return deserializeResponse<Relation[]>(getRelationsResponse);
 };
+
+export const getRelationBySlug = async (slug: string): Promise<Relation | null> => {
+    const response = await get(baseUrl, { slug });
+    const relations = await deserializeResponse<Relation[]>(response);
+    return relations.length > 0 ? relations[0] : null;
+};

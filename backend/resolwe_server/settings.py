@@ -341,7 +341,7 @@ REST_FRAMEWORK = {
         # 'resolwe.permissions.filters.ResolwePermissionsFilter',
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
-    "PAGE_SIZE": 100,
+    "PAGE_SIZE": 1000,
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
 
