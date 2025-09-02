@@ -1,86 +1,86 @@
 import { Action } from '@reduxjs/toolkit';
 import { Epic, combineEpics } from 'redux-observable';
-import { map, mergeMap, startWith, endWith, catchError } from 'rxjs/operators';
+import { map, mergeMap, startWith, endWith, catchError, filter, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { of, from, forkJoin, EMPTY } from 'rxjs';
 import { Data, Storage } from '@genialis/resolwe/dist/api/types/rest';
 import { mapStateSlice } from './rxjsCustomFilters';
 import { RootState } from 'redux/rootReducer';
 import { handleError } from 'utils/errorUtils';
 import { SamplesGenesExpressionsById } from 'redux/models/internal';
-import { getDataBySamplesIds, getStorage } from 'api';
+import { getDataBySamplesIds, getStorage, getRelationBySlug } from 'api';
 import {
     getSamplesExpressionsSamplesIds,
     samplesExpressionsFetchEnded,
     samplesExpressionsFetchStarted,
     samplesExpressionsFetchSucceeded,
 } from 'redux/stores/samplesExpressions';
+import { getSelectedTimeSeries } from 'redux/stores/timeSeries';
+import { getSelectedGenes } from 'redux/stores/genes';
+import { singleCellSeriesFetchEnded, singleCellSeriesFetchStarted, singleCellSeriesFetchSucceeded } from 'redux/stores/singleCellSeries';
+import { Relation } from '@genialis/resolwe/dist/api/types/rest';
+import _ from 'lodash';
 
-// Helper function to get cell expression storage
-const getCellStorage = async (
-    cellData: Data,
-): Promise<{ cellId: string; storage: Storage }> => {
-    const storage = await getStorage(cellData.output.exp_json);
-    
-    return {
-        cellId: cellData.output.cell_id,
-        storage,
-    };
+// Helper to get storage for a generic entity (by its Data item), mapping by entity id
+const getEntityStorage = async (
+    dataItem: Data,
+): Promise<{ entityId: number; storage: Storage }> => {
+    const storage = await getStorage(dataItem.output.exp_json);
+    const entityId = dataItem.entity != null ? dataItem.entity.id : 0;
+    return { entityId, storage };
+};
+
+// Fetch single-cell relation for current time series (slug + '_sc')
+const fetchSingleCellRelationEpic: Epic<Action, Action, RootState> = (_action$, state$) => {
+    return state$.pipe(
+        mapStateSlice((state) => {
+            const ts = getSelectedTimeSeries(state.timeSeries);
+            const bySlug: Record<string, Relation> = (state.singleCellSeries as any).bySlug || {};
+            const scSlug = ts ? `${ts.slug}_sc` : '';
+            return { scSlug, has: !!(scSlug && bySlug[scSlug]) };
+        }),
+        filter(({ scSlug, has }) => !!scSlug && !has),
+        switchMap(({ scSlug }) => from(getRelationBySlug(scSlug)).pipe(
+            filter((rel): rel is Relation => rel != null),
+            map((relation) => singleCellSeriesFetchSucceeded(relation)),
+            catchError((error) => of(handleError('Error fetching single-cell relation.', error))),
+            startWith(singleCellSeriesFetchStarted()),
+            endWith(singleCellSeriesFetchEnded()),
+        )),
+    );
 };
 
 // Epic to fetch single-cell expressions (similar to time series pattern)
 const fetchSingleCellExpressionsEpic: Epic<Action, Action, RootState> = (_action$, state$) => {
     return state$.pipe(
-        mapStateSlice(
-            // This would need to be implemented - get all single-cell sample IDs from the relation
-            (state) => getAllSingleCellSamplesIds(state.singleCellSeries), // Similar to getAllTimeSeriesSamplesIds
-        ),
-        mergeMap((singleCellSamplesIds) => {
-            const samplesExpressionsInStore = getSamplesExpressionsSamplesIds(
-                state$.value.samplesExpressions,
-            );
-
-            const singleCellSamplesIdsToFetch = singleCellSamplesIds.filter(
-                (sampleId) => !samplesExpressionsInStore.includes(sampleId),
-            );
-
-            if (singleCellSamplesIdsToFetch.length === 0) {
-                return EMPTY;
-            }
-
-            return from(getDataBySamplesIds(singleCellSamplesIdsToFetch)).pipe(
-                mergeMap((cellData) => {
-                    // Once cell data is retrieved, use its output.exp_json to retrieve gene expressions
-                    return forkJoin(cellData.map(getCellStorage)).pipe(
-                        map((cellStorages) => {
-                            const singleCellSamplesExpressions = {} as SamplesGenesExpressionsById;
-                            cellStorages.forEach(({ cellId, storage }) => {
-                                // Map cell ID to entity ID for consistency with time series pattern
-                                const entityId = cellData.find(d => d.output.cell_id === cellId)?.entity?.id || 0;
-                                singleCellSamplesExpressions[entityId] = storage.json.genes;
-                            });
-
-                            return samplesExpressionsFetchSucceeded(singleCellSamplesExpressions);
-                        }),
-                        catchError((error) =>
-                            of(handleError(`Error retrieving single-cell storage data.`, error)),
-                        ),
-                    );
-                }),
-                catchError((error) =>
-                    of(handleError(`Error retrieving single-cell data.`, error)),
-                ),
-                startWith(samplesExpressionsFetchStarted()),
-                endWith(samplesExpressionsFetchEnded()),
-            );
+        mapStateSlice((state) => {
+            const ts = getSelectedTimeSeries(state.timeSeries);
+            const genes = getSelectedGenes(state.genes);
+            const sc: Record<string, Relation> = (state.singleCellSeries as any).bySlug || {};
+            const rel = ts ? sc[`${ts.slug}_sc`] : undefined;
+            if (!ts || !rel || genes.length === 0) return { key: '', ids: [] as number[] };
+            const labels = new Set<string>();
+            genes.forEach((g) => { if (g.name) labels.add(g.name); if (g.feature_id) labels.add(g.feature_id); });
+            const allIds = (rel.partitions as any[]).filter((p) => p.label && labels.has(p.label)).map((p) => p.entity);
+            const existing = new Set<number>(getSamplesExpressionsSamplesIds(state.samplesExpressions));
+            const need = _.uniq(allIds.filter((id: number) => !existing.has(id))).sort((a, b) => a - b);
+            return { key: `${ts.slug}|${rel.id}|${need.join(',')}`, ids: need };
         }),
+        distinctUntilChanged((a, b) => a.key === b.key),
+        filter(({ ids }) => ids.length > 0),
+        switchMap(({ ids }) => from(getDataBySamplesIds(ids)).pipe(
+            mergeMap((dataItems) => forkJoin(dataItems.map(getEntityStorage)).pipe(
+                map((storages) => {
+                    const byId: SamplesGenesExpressionsById = {};
+                    storages.forEach(({ entityId, storage }) => { byId[entityId] = (storage as any).json.genes; });
+                    return samplesExpressionsFetchSucceeded(byId);
+                }),
+                catchError((error) => of(handleError('Error retrieving single-cell storage data.', error))),
+            )),
+            catchError((error) => of(handleError('Error retrieving single-cell data.', error))),
+            startWith(samplesExpressionsFetchStarted()),
+            endWith(samplesExpressionsFetchEnded()),
+        )),
     );
 };
 
-// Helper function to get all single-cell samples IDs (would need to be implemented)
-function getAllSingleCellSamplesIds(singleCellSeries: any): number[] {
-    // This would extract entity IDs from the single-cell relation partitions
-    // Similar to how getAllTimeSeriesSamplesIds works
-    return [];
-}
-
-export default combineEpics(fetchSingleCellExpressionsEpic);
+export default combineEpics(fetchSingleCellRelationEpic, fetchSingleCellExpressionsEpic);

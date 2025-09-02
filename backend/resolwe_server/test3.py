@@ -29,6 +29,10 @@ print(f"✅ Created collection: {test_collection.name} (ID: {test_collection.id}
 adata = sc.read_h5ad("AX4.h5ad")
 WORKERS = 10
 GENES_NUM = adata.shape[1]
+GENES_NUM = 10
+
+#make directory for temp_files
+os.makedirs("data/upload", exist_ok=True)
 
 # Compatibility layer
 HAS_ENTITY = hasattr(res, "entity")
@@ -120,7 +124,7 @@ for t in times:
             if sp.issparse(X)
             else np.asarray(X.mean(axis=0))
         )
-        out = f"temp_files/AX4_{t}_{r}.tab.gz"
+        out = f"data/upload/AX4_{t}_{r}.tab.gz"
         pd.DataFrame({"Gene": B.var["gene_ids"], "Expression": m}).to_csv(
             out, sep="\t", index=False, compression="gzip"
         )
@@ -148,7 +152,7 @@ for ind, gene in enumerate(adata_subset.var["gene_ids"]):
         f"{adata_subset.obs_names[idx]}\t{value}" for idx, value in enumerate(values)
     )
 
-    out_path = f"temp_files/temp_{gene}.tab.gz"
+    out_path = f"data/upload/temp_{gene}.tab.gz"
     with gzip.open(out_path, "wt", compresslevel=1, encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -165,7 +169,7 @@ for i in range(2):
         f"{adata_subset.obs_names[idx]}\t{value}" for idx, value in enumerate(values)
     )
 
-    out_path = f"temp_files/temp_X_uce_umap_{i}.tab.gz"
+    out_path = f"data/upload/temp_X_uce_umap_{i}.tab.gz"
     with gzip.open(out_path, "wt", compresslevel=1, encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -184,7 +188,7 @@ lines.extend(
     f"{adata_subset.obs_names[idx]}\t{value}" for idx, value in enumerate(values)
 )
 
-out_path = f"temp_files/temp_time.tab.gz"
+out_path = f"data/upload/temp_time.tab.gz"
 with gzip.open(out_path, "wt", compresslevel=1, encoding="utf-8") as f:
     f.write("\n".join(lines))
 
