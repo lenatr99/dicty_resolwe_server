@@ -20,15 +20,10 @@ python manage.py insert_features dicty_features.tab
 python manage.py runserver
 ```
 
-### 3. Start Workers (new terminal)
+### 3. Kill existing processes
 ```bash
-# Clean up existing processes
 pkill -f runworker || true
 pkill -f runlistener || true
-
-# Start worker
-cd backend/resolwe_server
-python manage.py runworker resolwe-server.manager.control
 ```
 
 ### 4. Start Listener (new terminal)
@@ -37,8 +32,20 @@ cd backend/resolwe_server
 python manage.py runlistener
 ```
 
-### 5. Setup Annotations (new terminal)
+### 5. Start workers (new terminal)
+```bash
+cd backend/resolwe_server
+python manage.py runworker resolwe-server.manager.control
+```
+
+### 6. Setup Annotations (new terminal)
 ```bash
 cd backend
 python setup_annotations.py
+```
+
+### 7. Add data
+```bash
+cd backend/resolwe_server
+python test3.py
 ```
