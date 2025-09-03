@@ -50,10 +50,18 @@ const ZERO_COLOR = '#e8e8e8';
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const genesColor = (t: number) => {
-    const start = { r: 232, g: 232, b: 232 };
-    const end = { r: 74, g: 104, b: 141 };
     const tt = clamp01(t);
-    return `rgb(${Math.round(lerp(start.r, end.r, tt))}, ${Math.round(lerp(start.g, end.g, tt))}, ${Math.round(lerp(start.b, end.b, tt))})`;
+    // Piecewise interpolation to match legend gradient:
+    // #e8e8e8 (0%) -> #4a688d (80%) -> #375068 (100%)
+    const start = hexToRgb('#e8e8e8');
+    const mid = hexToRgb('#4a688d');
+    const end = hexToRgb('#375068');
+    if (tt <= 0.8) {
+        const k = tt / 0.8;
+        return `rgb(${Math.round(lerp(start.r, mid.r, k))}, ${Math.round(lerp(start.g, mid.g, k))}, ${Math.round(lerp(start.b, mid.b, k))})`;
+    }
+    const k = (tt - 0.8) / 0.2;
+    return `rgb(${Math.round(lerp(mid.r, end.r, k))}, ${Math.round(lerp(mid.g, end.g, k))}, ${Math.round(lerp(mid.b, end.b, k))})`;
 };
 const hexToRgb = (hex: string) => {
     const h = hex.replace('#', '');
@@ -637,7 +645,7 @@ const CanvasScatterPlot = forwardRef<
                                 <div
                                     style={{
                                         height: '10px',
-                                        background: 'linear-gradient(to right, #e8e8e8 0%, #4a688d 100%)',
+                                        background: 'linear-gradient(to right, #e8e8e8 0%, #4a688d 80%, #375068 100%)',
                                         borderRadius: '2px',
                                     }}
                                 />
@@ -798,8 +806,8 @@ const getHighlightedCellIdsAndValues = createSelector(
     (selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug) => {
         if (!selectedTimeSeries || selectedGenes.length === 0)
             return { ids: [] as string[], values: {} as Record<string, number> };
-        const scSlug = `${selectedTimeSeries.slug}_sc`;
-        const scRelation = singleCellBySlug?.[scSlug];
+        const scSlugDash = `${selectedTimeSeries.slug}-sc`;
+        const scRelation = singleCellBySlug?.[scSlugDash];
         if (!scRelation) return { ids: [] as string[], values: {} as Record<string, number> };
 
         const selectedGeneNames = new Set(selectedGenes.map((g) => g.name));
@@ -865,8 +873,8 @@ const getCellGeneValues = createSelector(
     (selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug) => {
         const result: Record<string, Record<string, number>> = {};
         if (!selectedTimeSeries || selectedGenes.length === 0) return result;
-        const scSlug = `${selectedTimeSeries.slug}_sc`;
-        const scRelation = singleCellBySlug?.[scSlug];
+        const scSlugDash = `${selectedTimeSeries.slug}-sc`;
+        const scRelation = singleCellBySlug?.[scSlugDash];
         if (!scRelation) return result;
 
         // Map label -> geneName for quick lookup

@@ -35,11 +35,13 @@ const fetchSingleCellRelationEpic: Epic<Action, Action, RootState> = (_action$, 
         mapStateSlice((state) => {
             const ts = getSelectedTimeSeries(state.timeSeries);
             const bySlug: Record<string, Relation> = (state.singleCellSeries as any).bySlug || {};
-            const scSlug = ts ? `${ts.slug}_sc` : '';
-            return { scSlug, has: !!(scSlug && bySlug[scSlug]) };
+            const scSlugDash = ts ? `${ts.slug}-sc` : '';
+            const has = !!(scSlugDash && bySlug[scSlugDash]);
+            return { scSlugDash, has };
         }),
-        filter(({ scSlug, has }) => !!scSlug && !has),
-        switchMap(({ scSlug }) => from(getRelationBySlug(scSlug)).pipe(
+        distinctUntilChanged((prev, curr) => prev.scSlugDash === curr.scSlugDash && prev.has === curr.has),
+        filter(({ scSlugDash, has }) => !!scSlugDash && !has),
+        switchMap(({ scSlugDash }) => from(getRelationBySlug(scSlugDash)).pipe(
             filter((rel): rel is Relation => rel != null),
             map((relation) => singleCellSeriesFetchSucceeded(relation)),
             catchError((error) => of(handleError('Error fetching single-cell relation.', error))),
@@ -56,7 +58,7 @@ const fetchSingleCellExpressionsEpic: Epic<Action, Action, RootState> = (_action
             const ts = getSelectedTimeSeries(state.timeSeries);
             const genes = getSelectedGenes(state.genes);
             const sc: Record<string, Relation> = (state.singleCellSeries as any).bySlug || {};
-            const rel = ts ? sc[`${ts.slug}_sc`] : undefined;
+            const rel = ts ? sc[`${ts.slug}-sc`] : undefined;
             if (!ts || !rel || genes.length === 0) return { key: '', ids: [] as number[] };
             const labels = new Set<string>();
             genes.forEach((g) => { if (g.name) labels.add(g.name); if (g.feature_id) labels.add(g.feature_id); });
