@@ -88,11 +88,16 @@ const spectralColor = (t: number) => {
     const c1 = hexToRgb(spectralStops[Math.min(n, i + 1)]);
     return `rgb(${Math.round(lerp(c0.r, c1.r, f))}, ${Math.round(lerp(c0.g, c1.g, f))}, ${Math.round(lerp(c0.b, c1.b, f))})`;
 };
-const computeLegendMax = (entries: Array<[string, number]>, useLog1p: boolean): number => {
+const computeLegendMax = (entries: Array<[string, number]>, transformMode: 'linear' | 'log2' | 'log1p'): number => {
     let max = 0;
     for (const [, v] of entries) {
         if (typeof v === 'number' && isFinite(v)) {
-            const vt = useLog1p ? Math.log1p(v) : v;
+            let vt = v;
+            if (transformMode === 'log1p') {
+                vt = Math.log1p(v);
+            } else if (transformMode === 'log2') {
+                vt = v > 0 ? Math.log2(v + 1) : 0;
+            }
             if (vt > max) max = vt;
         }
     }
@@ -100,14 +105,19 @@ const computeLegendMax = (entries: Array<[string, number]>, useLog1p: boolean): 
 };
 const buildColorCache = (
     entries: Array<[string, number]>,
-    useLog1p: boolean,
+    transformMode: 'linear' | 'log2' | 'log1p',
     colorMode: ColorMode,
     legendMax: number,
 ): Record<string, string> => {
     const cache: Record<string, string> = {};
     for (const [cellId, rawVal] of entries) {
         const raw = typeof rawVal === 'number' && isFinite(rawVal) ? rawVal : 0;
-        const val = useLog1p ? Math.log1p(raw) : raw;
+        let val = raw;
+        if (transformMode === 'log1p') {
+            val = Math.log1p(raw);
+        } else if (transformMode === 'log2') {
+            val = raw > 0 ? Math.log2(raw + 1) : 0;
+        }
         const t = val / legendMax;
         cache[cellId] =
             colorMode === 'genes' ? (val <= 0 ? ZERO_COLOR : genesColor(t)) : spectralColor(t);
@@ -164,6 +174,10 @@ const CanvasScatterPlot = forwardRef<
         tooltipValuesByCellId?: Record<string, Record<string, number>>;
         tooltipGeneOrder?: string[];
         colorMode?: ColorMode;
+        transformMode?: 'linear' | 'log2' | 'log1p';
+        aggregationMode?: 'average' | 'sum' | 'min' | 'max';
+        onTransformModeChange?: (mode: 'linear' | 'log2' | 'log1p') => void;
+        onAggregationModeChange?: (mode: 'average' | 'sum' | 'min' | 'max') => void;
     }
 >(
     (
@@ -175,6 +189,10 @@ const CanvasScatterPlot = forwardRef<
             tooltipValuesByCellId,
             tooltipGeneOrder = [],
             colorMode = 'genes',
+            transformMode = 'log2',
+            aggregationMode = 'average',
+            onTransformModeChange,
+            onAggregationModeChange,
         },
         ref,
     ) => {
@@ -199,7 +217,6 @@ const CanvasScatterPlot = forwardRef<
         const devicePixelRatio = window.devicePixelRatio || 1;
         const lastScreenPointsRef = useRef<ScatterPlotPoint[]>([]);
         const [zoomDisplay, setZoomDisplay] = useState(100);
-        const [useLog1p, setUseLog1p] = useState(false);
         const [legendMax, setLegendMax] = useState(1);
         const [uniqueTimeValues, setUniqueTimeValues] = useState<number[]>([]);
         const highlightedSet = new Set(highlightedPoints);
@@ -296,12 +313,12 @@ const CanvasScatterPlot = forwardRef<
         useEffect(() => {
             const entries = colorValues ? Object.entries(colorValues) : [];
             if (colorMode === 'genes') {
-                const effectiveMax = computeLegendMax(entries, useLog1p);
+                const effectiveMax = computeLegendMax(entries, transformMode);
                 legendMaxRef.current = effectiveMax;
                 setLegendMax(effectiveMax);
                 colorCacheRef.current = buildColorCache(
                     entries,
-                    useLog1p,
+                    transformMode,
                     colorMode,
                     effectiveMax,
                 );
@@ -327,7 +344,7 @@ const CanvasScatterPlot = forwardRef<
                 }
                 colorCacheRef.current = cache;
             }
-        }, [colorValues, useLog1p, colorMode]);
+        }, [colorValues, transformMode, colorMode]);
 
         const render = useCallback(
             (points: ScatterPlotPoint[]) => {
@@ -348,7 +365,12 @@ const CanvasScatterPlot = forwardRef<
                             colorValues && typeof colorValues[id] === 'number'
                                 ? (colorValues[id] as number)
                                 : 0;
-                        return useLog1p ? Math.log1p(v) : v;
+                        if (transformMode === 'log1p') {
+                            return Math.log1p(v);
+                        } else if (transformMode === 'log2') {
+                            return v > 0 ? Math.log2(v + 1) : 0;
+                        }
+                        return v;
                     };
                     renderGenesPoints(
                         ctx,
@@ -585,25 +607,79 @@ const CanvasScatterPlot = forwardRef<
                         Zoom: {zoomDisplay}%
                     </div>
                     {colorMode === 'genes' && (
-                        <label
-                            style={{
-                                padding: '4px 8px',
-                                fontSize: '12px',
-                                background: 'rgba(255, 255, 255, 0.9)',
-                                border: '1px solid #ccc',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                            }}
-                        >
-                            <input
-                                type="checkbox"
-                                checked={useLog1p}
-                                onChange={(e) => setUseLog1p(e.target.checked)}
-                            />{' '}
-                            log1p
-                        </label>
+                        <>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '2px',
+                                }}
+                            >
+                                <label
+                                    style={{
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        color: '#666',
+                                        marginBottom: '2px',
+                                    }}
+                                >
+                                    Transform:
+                                </label>
+                                <select
+                                    value={transformMode}
+                                    onChange={(e) => onTransformModeChange?.(e.target.value as 'linear' | 'log2' | 'log1p')}
+                                    style={{
+                                        padding: '4px 6px',
+                                        fontSize: '12px',
+                                        background: 'rgba(255, 255, 255, 0.9)',
+                                        border: '1px solid #ccc',
+                                        borderRadius: '4px',
+                                        minWidth: '80px',
+                                    }}
+                                >
+                                    <option value="linear">Linear</option>
+                                    <option value="log2">Log2</option>
+                                    <option value="log1p">Log1p</option>
+                                </select>
+                            </div>
+                            {tooltipGeneOrder.length > 1 && (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '2px',
+                                    }}
+                                >
+                                    <label
+                                        style={{
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            color: '#666',
+                                            marginBottom: '2px',
+                                        }}
+                                    >
+                                        Aggregation:
+                                    </label>
+                                    <select
+                                        value={aggregationMode}
+                                        onChange={(e) => onAggregationModeChange?.(e.target.value as 'average' | 'sum' | 'min' | 'max')}
+                                        style={{
+                                            padding: '4px 6px',
+                                            fontSize: '12px',
+                                            background: 'rgba(255, 255, 255, 0.9)',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            minWidth: '80px',
+                                        }}
+                                    >
+                                        <option value="average">Average</option>
+                                        <option value="sum">Sum</option>
+                                        <option value="min">Min</option>
+                                        <option value="max">Max</option>
+                                    </select>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
                 <canvas
@@ -691,6 +767,28 @@ const CanvasScatterPlot = forwardRef<
                         )}
                     </div>
                 )}
+                {/* UMAP Axis Indicator */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        bottom: 10,
+                        left: 10,
+                        pointerEvents: 'none',
+                        color: '#666',
+                    }}
+                >
+                    <svg width="52" height="52" viewBox="0 0 52 52">
+                        {/* Horizontal axis (UMAP1) */}
+                        <line x1="12" y1="40" x2="50" y2="40" stroke="#666" strokeWidth="1.5" />
+                        <polygon points="46,36 52,40 46,44" fill="#666" />
+                        <text x="32" y="50" fontSize="9" textAnchor="middle" fill="#666" fontWeight="600">UMAP1</text>
+
+                        {/* Vertical axis (UMAP2) */}
+                        <line x1="12" y1="40" x2="12" y2="2" stroke="#666" strokeWidth="1.5" />
+                        <polygon points="8,6 12,0 16,6" fill="#666" />
+                        <text x="-10" y="4" fontSize="9" fill="#666" fontWeight="600" transform="translate(4,24) rotate(-90)">UMAP2</text>
+                    </svg>
+                </div>
                 {hoveredPoint && tooltipValuesByCellId && (
                     <div
                         style={{
@@ -727,7 +825,13 @@ const CanvasScatterPlot = forwardRef<
                                     {(() => {
                                         const raw =
                                             tooltipValuesByCellId[hoveredPoint.id]?.[gene] ?? 0;
-                                        return (useLog1p ? Math.log1p(raw) : raw).toFixed(3);
+                                        let transformed = raw;
+                                        if (transformMode === 'log1p') {
+                                            transformed = Math.log1p(raw);
+                                        } else if (transformMode === 'log2') {
+                                            transformed = raw > 0 ? Math.log2(raw + 1) : 0;
+                                        }
+                                        return transformed.toFixed(3);
                                     })()}
                                 </span>
                             </div>
@@ -803,7 +907,8 @@ const getHighlightedCellIdsAndValues = createSelector(
     (state: RootState) => getSelectedGenes(state.genes),
     (state: RootState) => getSamplesExpressionsById(state.samplesExpressions),
     (state: RootState) => state.singleCellSeries.bySlug as Record<string, any>,
-    (selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug) => {
+    (state: RootState, aggregationMode: 'average' | 'sum') => aggregationMode,
+    (selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug, aggregationMode) => {
         if (!selectedTimeSeries || selectedGenes.length === 0)
             return { ids: [] as string[], values: {} as Record<string, number> };
         const scSlugDash = `${selectedTimeSeries.slug}-sc`;
@@ -832,9 +937,11 @@ const getHighlightedCellIdsAndValues = createSelector(
             });
         const valueMap: Record<string, number> = {};
         Object.keys(cellSum).forEach((cellId) => {
-            const mean = cellSum[cellId] / (cellCount[cellId] || 1);
-            valueMap[cellId] = mean;
-            if (mean > 0) highlighted.add(cellId);
+            const aggregatedValue = aggregationMode === 'sum' 
+                ? cellSum[cellId] 
+                : cellSum[cellId] / (cellCount[cellId] || 1);
+            valueMap[cellId] = aggregatedValue;
+            if (aggregatedValue > 0) highlighted.add(cellId);
         });
         return { ids: Array.from(highlighted), values: valueMap };
     },
@@ -905,7 +1012,9 @@ const mapStateToProps = (state: RootState) => ({
     selectedTimeSeries: getSelectedTimeSeries(state.timeSeries),
     umapCoordinates: getUmapCoordinates(state),
     highlightedGenesIds: getHighlightedGenesIds(state.genes),
-    highlightedCells: getHighlightedCellIdsAndValues(state),
+    selectedGenes: getSelectedGenes(state.genes),
+    samplesExpressionsById: getSamplesExpressionsById(state.samplesExpressions),
+    singleCellBySlug: state.singleCellSeries.bySlug as Record<string, any>,
     cellGeneValues: getCellGeneValues(state),
     selectedGeneNames: getSelectedGenes(state.genes).map((g) => g.name),
     timeValues: getCellTimeValues(state),
@@ -920,13 +1029,89 @@ const UmapVisualization = ({
     selectedTimeSeries,
     umapCoordinates,
     highlightedGenesIds,
-    highlightedCells,
+    selectedGenes,
+    samplesExpressionsById,
+    singleCellBySlug,
     cellGeneValues,
     selectedGeneNames,
     timeValues,
 }: CombinedProps): ReactElement => {
     // Chart reference for potential future interactions
     const chartRef = useRef<CanvasScatterPlotHandle>(null);
+    
+    // Aggregation mode state
+    const [aggregationMode, setAggregationMode] = useState<'average' | 'sum' | 'min' | 'max'>('average');
+    const [transformMode, setTransformMode] = useState<'linear' | 'log2' | 'log1p'>('log2');
+
+    // Compute highlighted cells based on aggregation mode
+    const highlightedCells = useMemo(() => {
+        if (!selectedTimeSeries || selectedGenes.length === 0)
+            return { ids: [] as string[], values: {} as Record<string, number> };
+        const scSlugDash = `${selectedTimeSeries.slug}-sc`;
+        const scRelation = singleCellBySlug?.[scSlugDash];
+        if (!scRelation) return { ids: [] as string[], values: {} as Record<string, number> };
+
+        const selectedGeneNames = new Set(selectedGenes.map((g) => g.name));
+        const selectedGeneIds = new Set(selectedGenes.map((g) => g.feature_id));
+        const highlighted = new Set<string>();
+        const cellSum: Record<string, number> = {};
+        const cellCount: Record<string, number> = {};
+        scRelation.partitions
+            .filter(
+                (p: any) =>
+                    p.label && (selectedGeneNames.has(p.label) || selectedGeneIds.has(p.label)),
+            )
+            .forEach((p: any) => {
+                const expr = samplesExpressionsById[p.entity];
+                if (!expr) return;
+                Object.entries(expr).forEach(([cellId, value]) => {
+                    if (typeof value === 'number') {
+                        cellSum[cellId] = (cellSum[cellId] ?? 0) + value;
+                        cellCount[cellId] = (cellCount[cellId] ?? 0) + 1;
+                    }
+                });
+            });
+        const valueMap: Record<string, number> = {};
+        
+        if (aggregationMode === 'min' || aggregationMode === 'max') {
+            // For min/max, we need to track individual gene values per cell
+            const cellGeneValues: Record<string, number[]> = {};
+            scRelation.partitions
+                .filter(
+                    (p: any) =>
+                        p.label && (selectedGeneNames.has(p.label) || selectedGeneIds.has(p.label)),
+                )
+                .forEach((p: any) => {
+                    const expr = samplesExpressionsById[p.entity];
+                    if (!expr) return;
+                    Object.entries(expr).forEach(([cellId, value]) => {
+                        if (typeof value === 'number') {
+                            if (!cellGeneValues[cellId]) cellGeneValues[cellId] = [];
+                            cellGeneValues[cellId].push(value);
+                        }
+                    });
+                });
+            
+            Object.keys(cellGeneValues).forEach((cellId) => {
+                const values = cellGeneValues[cellId];
+                const aggregatedValue = aggregationMode === 'min' 
+                    ? Math.min(...values)
+                    : Math.max(...values);
+                valueMap[cellId] = aggregatedValue;
+                if (aggregatedValue > 0) highlighted.add(cellId);
+            });
+        } else {
+            // For sum/average, use the existing logic
+            Object.keys(cellSum).forEach((cellId) => {
+                const aggregatedValue = aggregationMode === 'sum' 
+                    ? cellSum[cellId] 
+                    : cellSum[cellId] / (cellCount[cellId] || 1);
+                valueMap[cellId] = aggregatedValue;
+                if (aggregatedValue > 0) highlighted.add(cellId);
+            });
+        }
+        return { ids: Array.from(highlighted), values: valueMap };
+    }, [selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug, aggregationMode]);
 
     // Memoize cell count display to prevent unnecessary re-renders during resizing
     const cellCountDisplay = useMemo(() => {
@@ -944,7 +1129,7 @@ const UmapVisualization = ({
     if (umapCoordinates.length === 0) {
         return (
             <UmapVisualizationContainer>
-                <div>No UMAP coordinates available in the selected time series.</div>
+                <div>No single cell data available in the selected time series.</div>
             </UmapVisualizationContainer>
         );
     }
@@ -968,13 +1153,13 @@ const UmapVisualization = ({
                     colorValues={
                         selectedGeneNames.length > 0 ? highlightedCells.values : timeValues
                     }
-                    // @ts-ignore
                     colorMode={selectedGeneNames.length > 0 ? 'genes' : 'time'}
-                    // pass tooltip gene values and order
-                    // @ts-ignore - inline component accepts these props
                     tooltipValuesByCellId={cellGeneValues}
-                    // @ts-ignore
                     tooltipGeneOrder={selectedGeneNames}
+                    transformMode={transformMode}
+                    aggregationMode={aggregationMode}
+                    onTransformModeChange={setTransformMode}
+                    onAggregationModeChange={setAggregationMode}
                     ref={chartRef}
                 />
             </div>

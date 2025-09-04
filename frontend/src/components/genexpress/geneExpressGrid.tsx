@@ -191,7 +191,7 @@ const GeneExpressGrid = ({
                         </DictyModule>
                     </div> */}
                     <div key={ModulesKeys.umapVisualization}>
-                        <DictyModule title="UMAP Visualization" isLoading={false}>
+                        <DictyModule title="Single Cell Visualization" isLoading={false}>
                             <UmapVisualization />
                         </DictyModule>
                     </div>
