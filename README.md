@@ -49,3 +49,4 @@ python setup_annotations.py
 cd backend/resolwe_server
 python test3.py
 ```
+
