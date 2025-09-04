@@ -1,0 +1,38 @@
+:80 {
+  root * /var/www/dicty
+
+  # Handle API requests first
+  handle /api* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  # Handle other backend routes
+  handle /saml-auth* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  handle /admin* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  handle /static* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  handle /media* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  # Handle WebSocket connections
+  handle /ws* {
+    reverse_proxy http://127.0.0.1:8000
+  }
+
+  # Handle everything else (React SPA)
+  handle {
+    try_files {path} /index.html
+    file_server
+  }
+}
+
+

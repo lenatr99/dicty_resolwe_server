@@ -1,0 +1,17 @@
+[Unit]
+Description=Dicty Resolwe Backend (Daphne)
+After=network.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dicty_resolwe_server/backend
+EnvironmentFile=%h/dicty_resolwe_server/backend/.env
+Environment=DJANGO_SETTINGS_MODULE=resolwe_server.settings
+Environment=PYTHONPATH=%h/dicty_resolwe_server/backend
+ExecStart=%h/dicty_resolwe_server/backend/.venv/bin/daphne -b 0.0.0.0 -p 8000 resolwe_server.asgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+
