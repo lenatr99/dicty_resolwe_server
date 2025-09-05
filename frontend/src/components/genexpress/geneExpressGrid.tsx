@@ -182,14 +182,6 @@ const GeneExpressGrid = ({
                             <Clustering />
                         </DictyModule>
                     </div>
-                    {/* <div key={ModulesKeys.singleCellSeriesSelector}>
-                        <DictyModule
-                            title="Single Cell Series Selection"
-                            isLoading={isFetchingTimeSeries || isAddingToBasket}
-                        >
-                            <SingleCellSeriesSelector />
-                        </DictyModule>
-                    </div> */}
                     <div key={ModulesKeys.umapVisualization}>
                         <DictyModule title="Single Cell Visualization" isLoading={false}>
                             <UmapVisualization />
