@@ -812,31 +812,44 @@ const CanvasScatterPlot = forwardRef<
                         <div style={{ fontWeight: 600, marginBottom: '4px' }}>
                             Cell: {hoveredPoint.id}
                         </div>
-                        {tooltipGeneOrder.map((gene) => (
-                            <div
-                                key={gene}
-                                style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    gap: '12px',
-                                }}
-                            >
-                                <span>{gene}</span>
-                                <span>
-                                    {(() => {
-                                        const raw =
-                                            tooltipValuesByCellId[hoveredPoint.id]?.[gene] ?? 0;
-                                        let transformed = raw;
-                                        if (transformMode === 'log1p') {
-                                            transformed = Math.log1p(raw);
-                                        } else if (transformMode === 'log2') {
-                                            transformed = raw > 0 ? Math.log2(raw + 1) : 0;
-                                        }
-                                        return transformed.toFixed(3);
-                                    })()}
-                                </span>
-                            </div>
-                        ))}
+                        {(() => {
+                            const cellValues = tooltipValuesByCellId[hoveredPoint.id] || {};
+                            const scored = tooltipGeneOrder.map((gene) => {
+                                const raw = cellValues[gene] ?? 0;
+                                let transformed = raw;
+                                if (transformMode === 'log1p') {
+                                    transformed = Math.log1p(raw);
+                                } else if (transformMode === 'log2') {
+                                    transformed = raw > 0 ? Math.log2(raw + 1) : 0;
+                                }
+                                return { gene, value: transformed };
+                            });
+                            scored.sort((a, b) => b.value - a.value);
+                            const shown = scored.slice(0, 10);
+                            const remaining = Math.max(0, scored.length - shown.length);
+                            return (
+                                <>
+                                    {shown.map(({ gene, value }) => (
+                                        <div
+                                            key={gene}
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                gap: '12px',
+                                            }}
+                                        >
+                                            <span>{gene}</span>
+                                            <span>{value.toFixed(3)}</span>
+                                        </div>
+                                    ))}
+                                    {remaining > 0 && (
+                                        <div style={{ marginTop: '4px', opacity: 0.8 }}>
+                                            … and {remaining} more
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()}
                     </div>
                 )}
             </div>
