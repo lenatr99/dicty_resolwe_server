@@ -13,6 +13,7 @@ import GOEnrichment from './modules/gOEnrichment/gOEnrichment';
 import Clustering from './modules/clustering/clustering';
 import GenesExpressions from './modules/genesExpressions/genesExpressions';
 import UmapVisualization from './modules/umapVisualization/umapVisualization';
+import { getSingleCellIsFetching } from 'redux/stores/singleCellSeries';
 import { DictyUrlQueryParameter, LayoutBreakpoint, ModulesKeys } from './common/constants';
 import { ResponsiveGridLayoutContainer } from './geneExpressGrid.styles';
 import useBrowserVisibility from './common/useBrowserVisibility';
@@ -53,6 +54,7 @@ const mapStateToProps = (state: RootState) => {
         isLoggingOut: getIsLoggingOut(state.authentication),
         isFetchingGOEnrichmentJson: getIsFetchingGOEnrichmentJson(state.gOEnrichment),
         gOEnrichmentStatus: getGOEnrichmentStatus(state.gOEnrichment),
+        isFetchingSingleCell: getSingleCellIsFetching(state.singleCellSeries as any),
     };
 };
 
@@ -73,6 +75,7 @@ const GeneExpressGrid = ({
     isFetchingDifferentialExpressionsData,
     isLoggingOut,
     isFetchingGOEnrichmentJson,
+    isFetchingSingleCell,
     gOEnrichmentStatus,
     connectedLayoutsChanged,
     connectedFetchAndSelectPredefinedGenes,
@@ -183,7 +186,7 @@ const GeneExpressGrid = ({
                         </DictyModule>
                     </div>
                     <div key={ModulesKeys.umapVisualization}>
-                        <DictyModule title="Single Cell Visualization" isLoading={false}>
+                        <DictyModule title="Single Cell Visualization" isLoading={isFetchingSingleCell || isFetchingSamplesExpressions}>
                             <UmapVisualization />
                         </DictyModule>
                     </div>

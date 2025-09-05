@@ -45,6 +45,7 @@ interface ScatterPlotPoint extends UmapDataPoint {
 type ColorValues = Record<string, number> | undefined;
 
 type ColorMode = 'genes' | 'time';
+const MAX_GENES_TO_SHOW = 500;
 // Helpers for color and drawing
 const ZERO_COLOR = '#e8e8e8';
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
@@ -915,8 +916,10 @@ const getHighlightedCellIdsAndValues = createSelector(
         const scRelation = singleCellBySlug?.[scSlugDash];
         if (!scRelation) return { ids: [] as string[], values: {} as Record<string, number> };
 
-        const selectedGeneNames = new Set(selectedGenes.map((g) => g.name));
-        const selectedGeneIds = new Set(selectedGenes.map((g) => g.feature_id));
+        // Cap to first MAX_GENES_TO_SHOW genes to avoid performance issues
+        const limitedGenes = selectedGenes.slice(0, MAX_GENES_TO_SHOW);
+        const selectedGeneNames = new Set(limitedGenes.map((g) => g.name));
+        const selectedGeneIds = new Set(limitedGenes.map((g) => g.feature_id));
         const highlighted = new Set<string>();
         const cellSum: Record<string, number> = {};
         const cellCount: Record<string, number> = {};
@@ -986,7 +989,8 @@ const getCellGeneValues = createSelector(
 
         // Map label -> geneName for quick lookup
         const nameByLabel = new Map<string, string>();
-        selectedGenes.forEach((g) => {
+        const limitedGenes = selectedGenes.slice(0, MAX_GENES_TO_SHOW);
+        limitedGenes.forEach((g) => {
             nameByLabel.set(g.name, g.name);
             nameByLabel.set(g.feature_id, g.name);
         });
@@ -1036,6 +1040,12 @@ const UmapVisualization = ({
     selectedGeneNames,
     timeValues,
 }: CombinedProps): ReactElement => {
+    // Determine if capping is in effect for the current selection
+    const isCapped = selectedGenes.length > MAX_GENES_TO_SHOW;
+    const displayedGeneNames = useMemo(
+        () => (isCapped ? selectedGenes.slice(0, MAX_GENES_TO_SHOW).map((g) => g.name) : selectedGenes.map((g) => g.name)),
+        [selectedGenes, isCapped],
+    );
     // Chart reference for potential future interactions
     const chartRef = useRef<CanvasScatterPlotHandle>(null);
     
@@ -1051,66 +1061,69 @@ const UmapVisualization = ({
         const scRelation = singleCellBySlug?.[scSlugDash];
         if (!scRelation) return { ids: [] as string[], values: {} as Record<string, number> };
 
-        const selectedGeneNames = new Set(selectedGenes.map((g) => g.name));
-        const selectedGeneIds = new Set(selectedGenes.map((g) => g.feature_id));
-        const highlighted = new Set<string>();
-        const cellSum: Record<string, number> = {};
-        const cellCount: Record<string, number> = {};
-        scRelation.partitions
-            .filter(
-                (p: any) =>
-                    p.label && (selectedGeneNames.has(p.label) || selectedGeneIds.has(p.label)),
-            )
-            .forEach((p: any) => {
-                const expr = samplesExpressionsById[p.entity];
-                if (!expr) return;
-                Object.entries(expr).forEach(([cellId, value]) => {
-                    if (typeof value === 'number') {
-                        cellSum[cellId] = (cellSum[cellId] ?? 0) + value;
-                        cellCount[cellId] = (cellCount[cellId] ?? 0) + 1;
-                    }
-                });
-            });
-        const valueMap: Record<string, number> = {};
-        
-        if (aggregationMode === 'min' || aggregationMode === 'max') {
-            // For min/max, we need to track individual gene values per cell
-            const cellGeneValues: Record<string, number[]> = {};
-            scRelation.partitions
-                .filter(
-                    (p: any) =>
-                        p.label && (selectedGeneNames.has(p.label) || selectedGeneIds.has(p.label)),
-                )
-                .forEach((p: any) => {
-                    const expr = samplesExpressionsById[p.entity];
-                    if (!expr) return;
-                    Object.entries(expr).forEach(([cellId, value]) => {
-                        if (typeof value === 'number') {
-                            if (!cellGeneValues[cellId]) cellGeneValues[cellId] = [];
-                            cellGeneValues[cellId].push(value);
-                        }
-                    });
-                });
-            
-            Object.keys(cellGeneValues).forEach((cellId) => {
-                const values = cellGeneValues[cellId];
-                const aggregatedValue = aggregationMode === 'min' 
-                    ? Math.min(...values)
-                    : Math.max(...values);
-                valueMap[cellId] = aggregatedValue;
-                if (aggregatedValue > 0) highlighted.add(cellId);
-            });
-        } else {
-            // For sum/average, use the existing logic
-            Object.keys(cellSum).forEach((cellId) => {
-                const aggregatedValue = aggregationMode === 'sum' 
-                    ? cellSum[cellId] 
-                    : cellSum[cellId] / (cellCount[cellId] || 1);
-                valueMap[cellId] = aggregatedValue;
-                if (aggregatedValue > 0) highlighted.add(cellId);
-            });
+        // Build fast lookup of allowed labels from capped genes
+        const allowedLabels: Record<string, 1> = Object.create(null);
+        const limitedGenes = selectedGenes.slice(0, MAX_GENES_TO_SHOW);
+        for (let i = 0; i < limitedGenes.length; i++) {
+            const g = limitedGenes[i];
+            if (g.name) allowedLabels[g.name] = 1;
+            if (g.feature_id) allowedLabels[g.feature_id] = 1;
         }
-        return { ids: Array.from(highlighted), values: valueMap };
+
+        const valueMap: Record<string, number> = Object.create(null);
+        if (aggregationMode === 'min' || aggregationMode === 'max') {
+            // Track per-cell min/max without allocating arrays per cell
+            const hasVal: Record<string, 1> = Object.create(null);
+            const isMin = aggregationMode === 'min';
+            const parts = scRelation.partitions as any[];
+            for (let pi = 0; pi < parts.length; pi++) {
+                const p = parts[pi];
+                const label = p.label;
+                if (!label || allowedLabels[label] !== 1) continue;
+                const expr = samplesExpressionsById[p.entity];
+                if (!expr) continue;
+                for (const cellId in expr) {
+                    const v = (expr as any)[cellId];
+                    if (typeof v !== 'number') continue;
+                    if (!hasVal[cellId]) {
+                        valueMap[cellId] = v;
+                        hasVal[cellId] = 1;
+                    } else if (isMin) {
+                        if (v < valueMap[cellId]) valueMap[cellId] = v;
+                    } else {
+                        if (v > valueMap[cellId]) valueMap[cellId] = v;
+                    }
+                }
+            }
+            const ids: string[] = [];
+            for (const cellId in valueMap) if (valueMap[cellId] > 0) ids.push(cellId);
+            return { ids, values: valueMap };
+        }
+
+        // Sum/Average optimized path
+        const sum: Record<string, number> = Object.create(null);
+        const cnt: Record<string, number> = Object.create(null);
+        const parts = scRelation.partitions as any[];
+        for (let pi = 0; pi < parts.length; pi++) {
+            const p = parts[pi];
+            const label = p.label;
+            if (!label || allowedLabels[label] !== 1) continue;
+            const expr = samplesExpressionsById[p.entity];
+            if (!expr) continue;
+            for (const cellId in expr) {
+                const v = (expr as any)[cellId];
+                if (typeof v !== 'number') continue;
+                sum[cellId] = (sum[cellId] || 0) + v;
+                cnt[cellId] = (cnt[cellId] || 0) + 1;
+            }
+        }
+        const ids: string[] = [];
+        for (const cellId in sum) {
+            const aggregated = aggregationMode === 'sum' ? sum[cellId] : sum[cellId] / (cnt[cellId] || 1);
+            valueMap[cellId] = aggregated;
+            if (aggregated > 0) ids.push(cellId);
+        }
+        return { ids, values: valueMap };
     }, [selectedTimeSeries, selectedGenes, samplesExpressionsById, singleCellBySlug, aggregationMode]);
 
     // Memoize cell count display to prevent unnecessary re-renders during resizing
@@ -1155,13 +1168,32 @@ const UmapVisualization = ({
                     }
                     colorMode={selectedGeneNames.length > 0 ? 'genes' : 'time'}
                     tooltipValuesByCellId={cellGeneValues}
-                    tooltipGeneOrder={selectedGeneNames}
+                    tooltipGeneOrder={displayedGeneNames}
                     transformMode={transformMode}
                     aggregationMode={aggregationMode}
                     onTransformModeChange={setTransformMode}
                     onAggregationModeChange={setAggregationMode}
                     ref={chartRef}
                 />
+                {isCapped && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 50,
+                            left: 10,
+                            background: 'rgba(255, 243, 205, 0.95)',
+                            color: '#664d03',
+                            border: '1px solid #ffecb5',
+                            borderRadius: '4px',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                            zIndex: 1100,
+                        }}
+                    >
+                        Showing first {MAX_GENES_TO_SHOW} genes of {selectedGenes.length} selected.
+                    </div>
+                )}
             </div>
         </UmapVisualizationContainer>
     );

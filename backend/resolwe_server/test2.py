@@ -150,7 +150,7 @@ relation = res.relation.create(
     type="series",
     category="time series",
     collection=test_collection,
-    slug="relation-60",  # change if it collides
+    slug="relation-65",  # change if it collides
     partitions=partitions,
 )
 

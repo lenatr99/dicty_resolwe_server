@@ -1,6 +1,6 @@
 import { Action } from '@reduxjs/toolkit';
 import { Epic, combineEpics } from 'redux-observable';
-import { map, mergeMap, startWith, endWith, catchError, filter, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { map, mergeMap, startWith, endWith, catchError, filter, distinctUntilChanged, switchMap, concatMap, reduce } from 'rxjs/operators';
 import { of, from, forkJoin, EMPTY } from 'rxjs';
 import { Data, Storage } from '@genialis/resolwe/dist/api/types/rest';
 import { mapStateSlice } from './rxjsCustomFilters';
@@ -62,22 +62,37 @@ const fetchSingleCellExpressionsEpic: Epic<Action, Action, RootState> = (_action
             if (!ts || !rel || genes.length === 0) return { key: '', ids: [] as number[] };
             const labels = new Set<string>();
             genes.forEach((g) => { if (g.name) labels.add(g.name); if (g.feature_id) labels.add(g.feature_id); });
-            const allIds = (rel.partitions as any[]).filter((p) => p.label && labels.has(p.label)).map((p) => p.entity);
+            const allIds = _.uniq((rel.partitions as any[])
+                .filter((p) => p.label && labels.has(p.label))
+                .map((p) => p.entity))
+                .sort((a: number, b: number) => a - b);
+            // Always consider only the first 500 candidates overall; ignore the rest entirely
+            const firstBatch = allIds.slice(0, 500);
             const existing = new Set<number>(getSamplesExpressionsSamplesIds(state.samplesExpressions));
-            const need = _.uniq(allIds.filter((id: number) => !existing.has(id))).sort((a, b) => a - b);
-            return { key: `${ts.slug}|${rel.id}|${need.join(',')}`, ids: need };
+            const need = firstBatch.filter((id: number) => !existing.has(id));
+            // Key is based on the fixed firstBatch so it doesn't change after those are fetched
+            return { key: `${ts.slug}|${rel.id}|${firstBatch.join(',')}`, ids: need };
         }),
         distinctUntilChanged((a, b) => a.key === b.key),
         filter(({ ids }) => ids.length > 0),
         switchMap(({ ids }) => from(getDataBySamplesIds(ids)).pipe(
-            mergeMap((dataItems) => forkJoin(dataItems.map(getEntityStorage)).pipe(
-                map((storages) => {
-                    const byId: SamplesGenesExpressionsById = {};
-                    storages.forEach(({ entityId, storage }) => { byId[entityId] = (storage as any).json.genes; });
-                    return samplesExpressionsFetchSucceeded(byId);
-                }),
-                catchError((error) => of(handleError('Error retrieving single-cell storage data.', error))),
-            )),
+            // Process storages in small chunks to limit parallel requests
+            mergeMap((dataItems) => {
+                const MAX_STORAGES = 500;
+                const CHUNK_SIZE = 50;
+                const limited = dataItems.slice(0, MAX_STORAGES);
+                const chunks: Array<typeof limited> = _.chunk(limited, CHUNK_SIZE) as any;
+                return from(chunks).pipe(
+                    concatMap((chunk) => forkJoin(chunk.map(getEntityStorage))),
+                    reduce((acc, results) => acc.concat(results), [] as Array<{ entityId: number; storage: Storage }>),
+                    map((storages) => {
+                        const byId: SamplesGenesExpressionsById = {};
+                        storages.forEach(({ entityId, storage }) => { byId[entityId] = (storage as any).json.genes; });
+                        return samplesExpressionsFetchSucceeded(byId);
+                    }),
+                    catchError((error) => of(handleError('Error retrieving single-cell storage data.', error))),
+                );
+            }),
             catchError((error) => of(handleError('Error retrieving single-cell data.', error))),
             startWith(samplesExpressionsFetchStarted()),
             endWith(samplesExpressionsFetchEnded()),

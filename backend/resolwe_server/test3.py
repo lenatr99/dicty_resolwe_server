@@ -109,28 +109,25 @@ def upload_expression(args):
 # 1. Generate bulk expression files for time points and markers
 bulk_tasks = []
 times = ["00hr", "04hr", "08hr", "12hr", "16hr", "20hr"]
-reps = adata.obs["marker"].unique()
 time_exps = {t: [] for t in times}
 
 for t in times:
-    A = adata[adata.obs["time"] == t]
-    for r in reps:
-        B = A[A.obs["marker"] == r]
-        if B.n_obs == 0:
-            continue
-        X = B.layers.get(None, B.X)
-        m = (
-            np.asarray(X.mean(axis=0)).ravel()
-            if sp.issparse(X)
-            else np.asarray(X.mean(axis=0))
-        )
-        out = f"../data/upload/AX4_{t}_{r}.tab.gz"
-        pd.DataFrame({"Gene": B.var["gene_ids"], "Expression": m}).to_csv(
-            out, sep="\t", index=False, compression="gzip"
-        )
-        bulk_tasks.append(
-            (out, f"Expression {t} {r}", len(bulk_tasks), len(times) * len(reps))
-        )
+    B = adata[adata.obs["time"] == t]
+    if B.n_obs == 0:
+        continue
+    X = B.layers.get(None, B.X)
+    m = (
+        np.asarray(X.mean(axis=0)).ravel()
+        if sp.issparse(X)
+        else np.asarray(X.mean(axis=0))
+    )
+    out = f"../data/upload/AX4_{t}.tab.gz"
+    pd.DataFrame({"Gene": B.var["gene_ids"], "Expression": m}).to_csv(
+        out, sep="\t", index=False, compression="gzip"
+    )
+    bulk_tasks.append(
+        (out, f"Expression {t}", len(bulk_tasks), len(times))
+    )
 
 # 2. Generate single gene files
 adata_subset = adata[:, :GENES_NUM].copy()

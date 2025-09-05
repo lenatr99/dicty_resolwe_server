@@ -115,7 +115,7 @@ def upload_expression(res: resdk.Resolwe, collection, file_path: str, exp_name: 
 
 def find_single_cell_relation(res: resdk.Resolwe, collection):
     # Prefer rebuilt slug if present
-    preferred_slug = f"relation-{collection.id}-rebuilt-sc"
+    preferred_slug = f"relation-{collection.id}-sc"
     rels = list(res.relation.filter(collection=collection.id))
     target = None
     for r in rels:

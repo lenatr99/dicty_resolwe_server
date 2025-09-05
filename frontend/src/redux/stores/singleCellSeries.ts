@@ -52,5 +52,7 @@ export const getSingleCellRelationForTimeSeriesSlug = createSelector(
     },
 );
 
+export const getSingleCellIsFetching = (state: SingleCellSeriesState): boolean => state.isFetching;
+
 
 
