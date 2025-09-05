@@ -97,8 +97,29 @@ class DifferentialExpressionViewSet(BaseDataViewSet):
     http_method_names = ["get"]  # read-only
 
     def list(self, request):
-        response = {}
-        return Response(response)
+        # Start with the base queryset (permissions/filters applied by parent)
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Keep only Data that look like differential expression results
+        # These have DE payload stored in output.de_json
+        queryset = queryset.filter(output__has_key="de_json")
+
+        # Filter by tag if provided (e.g. tags=community:bcm)
+        tag = request.query_params.get("tags")
+        if tag:
+            # ArrayField contains lookup expects a list
+            queryset = queryset.filter(tags__contains=[tag])
+
+        # Order consistently (by id asc)
+        queryset = queryset.order_by("id")
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 class BasketViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
     serializer_class = BasketCreateSerializer
