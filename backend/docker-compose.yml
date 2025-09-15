@@ -4,9 +4,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: resolwe
-      POSTGRES_USER: resolwe
-      POSTGRES_PASSWORD: resolwe
+      POSTGRES_DB: ${DB_NAME:-resolwe}
+      POSTGRES_USER: ${DB_USER:-resolwe}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-resolwe}
     ports:
       - "5432:5432"
     volumes:
@@ -32,11 +32,10 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_USERNAME: admin
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-change-this-password}
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"  # Bind to localhost only
     depends_on:
       - postgres
     volumes:

@@ -1,3 +1,5 @@
+import os
+import json
 from django.urls import include, path
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
@@ -203,12 +205,18 @@ def saml_auth_api_login(request):
             username = request.POST.get('username') or request.POST.get('email')
             password = request.POST.get('password')
         
-        # Create admin user if it doesn't exist
-        if username == 'admin' and password == 'admin':
+        # Only allow authentication with environment-configured credentials
+        admin_username = os.environ.get('ADMIN_USERNAME')
+        admin_password = os.environ.get('ADMIN_PASSWORD')
+        
+        if not admin_username or not admin_password:
+            return JsonResponse({"error": "Admin credentials not configured"}, status=500)
+        
+        if username == admin_username and password == admin_password:
             user, created = User.objects.get_or_create(
-                username='admin',
+                username=admin_username,
                 defaults={
-                    'email': 'admin@localhost',
+                    'email': f'{admin_username}@localhost',
                     'first_name': 'Admin',
                     'last_name': 'User',
                     'is_staff': True,
@@ -216,11 +224,11 @@ def saml_auth_api_login(request):
                 }
             )
             if created:
-                user.set_password('admin')
+                user.set_password(admin_password)
                 user.save()
             
             # Authenticate and login
-            user = authenticate(request, username='admin', password='admin')
+            user = authenticate(request, username=admin_username, password=admin_password)
             if user:
                 login(request, user)
                 

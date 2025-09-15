@@ -16,8 +16,13 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
 
 
 def connect() -> resdk.Resolwe:
-    res = resdk.Resolwe(url="http://localhost:8000", username="admin", password="admin")
-    res.login(username="admin", password="admin")
+    import os
+    admin_user = os.environ.get('ADMIN_USERNAME', 'admin')
+    admin_pass = os.environ.get('ADMIN_PASSWORD', 'admin')
+    url = os.environ.get('RESOLWE_URL', 'http://localhost:8000')
+    
+    res = resdk.Resolwe(url=url, username=admin_user, password=admin_pass)
+    res.login(username=admin_user, password=admin_pass)
     return res
 
 

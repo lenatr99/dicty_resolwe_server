@@ -1,15 +1,37 @@
 [Unit]
 Description=Dicty Resolwe Backend (Daphne)
-After=network.target docker.service
+After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/dicty_resolwe_server/backend
-EnvironmentFile=%h/dicty_resolwe_server/backend/.env
+User=dictyapp
+Group=dictyapp
+WorkingDirectory=/opt/dicty_resolwe_server/backend/resolwe_server
+EnvironmentFile=/etc/dicty/backend.env
 Environment=DJANGO_SETTINGS_MODULE=resolwe_server.settings
-Environment=PYTHONPATH=%h/dicty_resolwe_server/backend
-ExecStart=%h/dicty_resolwe_server/backend/.venv/bin/daphne -b 0.0.0.0 -p 8000 resolwe_server.asgi:application
+Environment=PYTHONPATH=/opt/dicty_resolwe_server/backend
+ExecStart=/opt/dicty_resolwe_server/backend/.venv/bin/daphne -b 127.0.0.1 -p 8000 resolwe_server.asgi:application
 Restart=always
+RestartSec=3
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @basic-io @network-io
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/opt/dicty_resolwe_server
 
 [Install]
 WantedBy=multi-user.target
