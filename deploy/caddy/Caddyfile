@@ -1,0 +1,57 @@
+# Caddyfile for Dicty Resolwe Server
+# Serves frontend and proxies API to Django backend
+
+{
+    # Global options
+    admin off
+    auto_https on
+}
+
+# Main site - replace with your domain
+95.179.242.134, localhost {
+    # Serve static frontend files
+    root * /home/dictyapp/www/dicty
+    
+    # Enable file serving
+    file_server
+    
+    # Try files first, then fallback to index.html for SPA routing
+    try_files {path} {path}/ /index.html
+    
+    # Proxy API requests to Django backend
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+    
+    # Proxy admin requests to Django backend
+    handle /admin/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+    
+    # Proxy static files requests to Django backend
+    handle /static/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+    
+    # Add security headers
+    header {
+        # Remove server info
+        -Server
+        # Security headers
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        # HSTS for HTTPS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
+    
+    # Compress responses
+    encode gzip zstd
+    
+    # Logging
+    log {
+        output file /home/dictyapp/logs/caddy.log
+        level INFO
+    }
+}

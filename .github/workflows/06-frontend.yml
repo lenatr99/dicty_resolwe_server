@@ -1,0 +1,113 @@
+name: Deploy - 06 Frontend and Caddy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_HOST_KEY:-}" ]; then
+            echo "$VPS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload frontend code and configs
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          
+          # Create directories
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/www /home/$USER/logs /home/$USER/dicty_resolwe_server/deploy/caddy'
+          
+          # Upload frontend code (excluding node_modules and build)
+          rsync -avz --delete --exclude 'node_modules/' --exclude 'build/' --exclude '.next/' --exclude 'dist/' -e "ssh -p $port -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" frontend/ "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/frontend/"
+          
+          # Upload deployment scripts and configs
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/frontend_deploy.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/scripts/frontend_deploy.sh"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/caddy/Caddyfile "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/caddy/Caddyfile"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/systemd/caddy.service "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/systemd/caddy.service"
+          
+          # Make scripts executable
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'chmod +x /home/$USER/dicty_resolwe_server/deploy/scripts/frontend_deploy.sh'
+
+      - name: Build and deploy frontend
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' -v; bash /home/\$USER/dicty_resolwe_server/deploy/scripts/frontend_deploy.sh"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/dicty_resolwe_server/deploy/scripts/frontend_deploy.sh'
+          fi
+
+      - name: Install and start Caddy service
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' systemctl stop caddy || true; echo \"\$PW\" | sudo -S -p '' cp /home/\$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/; echo \"\$PW\" | sudo -S -p '' systemctl daemon-reload; echo \"\$PW\" | sudo -S -p '' systemctl enable caddy; echo \"\$PW\" | sudo -S -p '' systemctl start caddy"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo systemctl stop caddy || true && sudo cp /home/$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable caddy && sudo systemctl start caddy'
+          fi
+
+      - name: Check deployment status
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          
+          echo "Waiting for Caddy to start..."
+          sleep 5
+          
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' systemctl status caddy --no-pager"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo systemctl status caddy --no-pager'
+          fi
+          
+          echo "Testing frontend..."
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'curl -s http://127.0.0.1/ | head -5 || echo "Frontend not responding on HTTP"'
+          
+          echo "Testing if HTTPS is working..."
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'curl -k -s https://127.0.0.1/ | head -5 || echo "HTTPS not ready yet"'
