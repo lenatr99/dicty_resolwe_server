@@ -10,6 +10,15 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+# Free port 5432 if another Docker container is using it
+conflict_id=$(docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | awk '/127\.0\.0\.1:5432->|0\.0\.0\.0:5432->/ {print $1; exit}') || true
+if [ -n "${conflict_id:-}" ]; then
+  echo "Detected a container using host port 5432. Stopping container $conflict_id to free the port..."
+  docker stop "$conflict_id" || true
+  # Give Docker a moment to release the port
+  sleep 2
+fi
+
 # Ensure compose plugin works; fallback to standalone compose v2 if needed
 if ! docker compose version >/dev/null 2>&1; then
   echo "docker compose plugin not available; installing standalone docker-compose v2..."
