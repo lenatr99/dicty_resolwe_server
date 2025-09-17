@@ -20,10 +20,20 @@ touch "$ENV_FILE"
 # Ensure we're in the backend directory
 cd "$BACKEND_DIR"
 
-# Create/update virtual environment
+# Ensure Python 3.11+ is available
+if ! command -v python3.11 >/dev/null 2>&1; then
+  echo "Installing Python 3.11..."
+  sudo apt-get update -y
+  sudo apt-get install -y software-properties-common
+  sudo add-apt-repository ppa:deadsnakes/ppa -y
+  sudo apt-get update -y
+  sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
+fi
+
+# Create/update virtual environment with Python 3.11
 if [ ! -d "$VENV_DIR" ]; then
-  echo "Creating Python virtual environment..."
-  python3 -m venv "$VENV_DIR"
+  echo "Creating Python 3.11 virtual environment..."
+  python3.11 -m venv "$VENV_DIR"
 fi
 
 # Activate virtual environment
