@@ -1,56 +1,46 @@
-:80 {
-  encode zstd gzip
-  header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-    X-Content-Type-Options "nosniff"
-    X-Frame-Options "DENY"
-    Referrer-Policy "no-referrer-when-downgrade"
-    X-XSS-Protection "1; mode=block"
-    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; media-src 'self'; worker-src 'self' blob:; frame-ancestors 'none';"
-    Permissions-Policy "geolocation=(), microphone=(), camera=()"
-  }
-  root * /var/www/dicty
+# Caddy configuration for Dicty Resolwe Server
+# This provides automatic HTTPS with Let's Encrypt
+# Alternative to nginx if you prefer automatic SSL
 
-  # Rate limiting for API endpoints
-  @api_endpoints path /api/* /saml-auth/* /upload/*
-  handle @api_endpoints {
-    rate_limit {
-      zone api_zone {
-        key {remote_host}
-        window 1m
-        events 30
-      }
+95.179.242.134 {
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer-when-downgrade"
+        Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'"
     }
-    reverse_proxy http://127.0.0.1:8000
-  }
 
-  # Handle other backend routes
-  handle /saml-auth* {
-    reverse_proxy http://127.0.0.1:8000
-  }
+    # API and admin routes - proxy to Django backend
+    reverse_proxy /api/* 127.0.0.1:8000
+    reverse_proxy /admin/* 127.0.0.1:8000
+    reverse_proxy /ws/* 127.0.0.1:8000
 
-  handle /admin* {
-    reverse_proxy http://127.0.0.1:8000
-  }
+    # Serve Django static files
+    handle_path /static/* {
+        root * /home/dictyapp/dicty_resolwe_server/backend/staticfiles
+        file_server
+    }
 
-  handle /static* {
-    reverse_proxy http://127.0.0.1:8000
-  }
+    # Serve frontend static files
+    handle {
+        root * /home/dictyapp/dicty_resolwe_server/frontend/build
+        try_files {path} {path}/ /index.html
+        file_server
+    }
 
-  handle /media* {
-    reverse_proxy http://127.0.0.1:8000
-  }
-
-  # Handle WebSocket connections
-  handle /ws* {
-    reverse_proxy http://127.0.0.1:8000
-  }
-
-  # Handle everything else (React SPA)
-  handle {
-    try_files {path} /index.html
-    file_server
-  }
+    # Logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100MB
+            roll_keep 5
+        }
+        format json
+    }
 }
 
-
+# Redirect HTTP to HTTPS (if using a domain)
+# http://your-domain.com {
+#     redir https://your-domain.com{uri}
+# }

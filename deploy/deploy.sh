@@ -1,167 +1,314 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# Idempotent deploy script for VPS
-# - Updates repo
-# - Ensures Python 3.11 + venv, installs backend deps, runs migrations
-# - Builds frontend and syncs to /var/www/dicty
-# - Ensures Caddy is installed and configured
-# - Ensures and restarts systemd service for backend (daphne)
+# Dicty Resolwe Server Deployment Script
+# This script deploys the application to the VPS server
 
-PROJECT_DIR="${PROJECT_DIR:-$HOME/dicty_resolwe_server}"
+set -e  # Exit on any error
+
+# Configuration
+PROJECT_DIR="/home/dictyapp/dicty_resolwe_server"
 BACKEND_DIR="$PROJECT_DIR/backend"
-DJANGO_DIR="$BACKEND_DIR/resolwe_server"
-VENV_DIR="$BACKEND_DIR/.venv"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
-WEB_ROOT="/var/www/dicty"
-SERVICE_NAME="dicty-backend"
+SERVICE_NAME="dicty-app"
 
-echo "[deploy] Using PROJECT_DIR=$PROJECT_DIR"
+echo "=== Starting Dicty Resolwe Server Deployment ==="
+echo "Date: $(date)"
+echo "User: $(whoami)"
 
-update_repo() {
-  # Repo content is delivered by rsync from GitHub Actions.
-  # To avoid git ownership/safe.directory issues on the VPS, skip git here.
-  # Ensure the project directory exists and proceed with build/deploy.
-  mkdir -p "$PROJECT_DIR"
-  echo "[deploy] Using rsync-delivered sources; skipping git operations"
-}
+# Update source code
+echo "=== Updating source code ==="
+cd $PROJECT_DIR
 
-ensure_python() {
-  if ! command -v python3.11 >/dev/null 2>&1; then
-    echo "[deploy] Installing Python 3.11"
-    sudo apt update
-    sudo apt install -y software-properties-common curl ca-certificates gnupg
-    sudo add-apt-repository -y ppa:deadsnakes/ppa
-    sudo apt update
-    sudo apt install -y python3.11 python3.11-venv
-  fi
-}
+# Check if git repo exists, if not clone it
+if [ ! -d ".git" ]; then
+    echo "Git repository not found. Cloning..."
+    cd /home/dictyapp
+    git clone https://github.com/ltrnavove/dicty_resolwe_server.git
+    cd dicty_resolwe_server
+else
+    echo "Git repository found. Pulling latest changes..."
+    git fetch origin
+    git reset --hard origin/master
+fi
 
-ensure_swap() {
-  # Create 4G swap if none exists (helps Node build)
-  if ! grep -q "swapfile" /etc/fstab 2>/dev/null && [ ! -f /swapfile ]; then
-    echo "[deploy] Creating 4G swapfile"
-    sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
-    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-  fi
-}
+echo "Current commit: $(git rev-parse HEAD)"
 
-setup_backend() {
-  echo "[deploy] Backend setup"
-  python3.11 -m venv "$VENV_DIR" || true
-  source "$VENV_DIR/bin/activate"
-  pip install -U pip setuptools wheel
-  pip install -r "$BACKEND_DIR/requirements.txt"
-  # Ensure .env exists at backend/.env (preferred path)
-  if [ -f "$DJANGO_DIR/.env" ] && [ ! -f "$BACKEND_DIR/.env" ]; then
-    mv "$DJANGO_DIR/.env" "$BACKEND_DIR/.env"
-  fi
-  # Migrate (safe)
-  (cd "$DJANGO_DIR" && python manage.py migrate)
-}
+# Stop existing services
+echo "=== Stopping existing services ==="
+sudo systemctl stop $SERVICE_NAME || true
+sudo systemctl stop nginx || true
 
-ensure_listener_keys() {
-  # Generate ZMQ curve keys if not present in backend/.env
-  local env_file="$BACKEND_DIR/.env"
-  if [ ! -f "$env_file" ]; then
-    touch "$env_file"
-  fi
-  if ! grep -q '^LISTENER_PUBLIC_KEY=' "$env_file" || ! grep -q '^LISTENER_PRIVATE_KEY=' "$env_file"; then
-    echo "[deploy] Generating listener keys"
-    local out
-    out=$($VENV_DIR/bin/python - <<'PY'
-import zmq
-pub, priv = zmq.curve_keypair()
-print(f"LISTENER_PUBLIC_KEY={pub.decode()}")
-print(f"LISTENER_PRIVATE_KEY={priv.decode()}")
-PY
-)
-    printf "%s\n" "$out" | sudo tee -a "$env_file" >/dev/null
-  fi
-}
+# Setup database
+echo "=== Setting up database ==="
+cd $BACKEND_DIR
 
-ensure_node() {
-  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-    echo "[deploy] Installing Node.js 20"
+# Setup environment file
+if [ ! -f "$BACKEND_DIR/.env" ]; then
+    echo "Setting up production environment file..."
+    cp $PROJECT_DIR/deploy/production-env-template.txt $BACKEND_DIR/.env
+    
+    # Generate a random secret key
+    SECRET_KEY=$(python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')
+    sed -i "s/your-super-secret-key-change-this-in-production-make-it-very-long-and-random/$SECRET_KEY/g" $BACKEND_DIR/.env
+    
+    echo "✅ Environment file created. Please review and update $BACKEND_DIR/.env with your specific settings."
+fi
+
+# Start Docker services for database using production compose
+docker compose -f $PROJECT_DIR/deploy/docker-compose.prod.yml down || true
+docker compose -f $PROJECT_DIR/deploy/docker-compose.prod.yml up -d
+
+echo "Waiting for database to be ready..."
+# Wait for PostgreSQL to be ready
+until docker exec dicty-postgres pg_isready -U resolwe > /dev/null 2>&1; do
+    echo "Waiting for database..."
+    sleep 2
+done
+
+echo "Database is ready!"
+
+# Setup Python environment for backend
+echo "=== Setting up backend environment ==="
+cd $BACKEND_DIR
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+
+# Activate virtual environment and install dependencies
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Load environment variables
+if [ -f ".env" ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
+# Database migrations and setup
+echo "=== Running database migrations ==="
+cd $BACKEND_DIR/resolwe_server
+
+# Run Django migrations
+python manage.py migrate
+
+# Create superuser (skip if exists)
+echo "=== Creating superuser ==="
+python manage.py shell << 'EOF'
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(username='admin').exists():
+    User.objects.create_superuser('admin', 'admin@admin.com', 'admin123')
+    print("Superuser created")
+else:
+    print("Superuser already exists")
+EOF
+
+# Register and prepare runtime
+echo "=== Preparing runtime ==="
+python manage.py register || true
+python manage.py prepare_runtime || true
+python manage.py collecttools || true
+
+# Insert features if they don't exist
+echo "=== Setting up features ==="
+python manage.py shell << 'EOF'
+from django.core.management import call_command
+try:
+    call_command('insert_features', 'dicty_features.tab')
+    print("Features inserted")
+except Exception as e:
+    print(f"Features already exist or error: {e}")
+EOF
+
+# Setup annotations
+echo "=== Setting up annotations ==="
+cd $BACKEND_DIR
+python setup_annotations.py || true
+
+# Migrate database if needed
+echo "=== Running database migration script ==="
+if [ -f "reload_database.sh" ]; then
+    # Update the script to use new VPS IP
+    sed -i 's/91\.98\.119\.63/95.179.242.134/g' reload_database.sh
+    sed -i 's/root/dictyapp/g' reload_database.sh
+    echo "Database migration script updated for new VPS"
+fi
+
+# Build frontend
+echo "=== Building frontend ==="
+cd $FRONTEND_DIR
+
+# Install Node.js and Yarn if not present
+if ! command -v node &> /dev/null; then
+    echo "Installing Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt install -y nodejs
-  fi
-  # Enable corepack/yarn
-  if ! command -v yarn >/dev/null 2>&1; then
-    corepack enable || true
-  fi
-}
+    sudo apt-get install -y nodejs
+fi
 
-build_frontend() {
-  echo "[deploy] Building frontend"
-  ensure_swap
-  ensure_node
-  export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=6144}
-  (cd "$FRONTEND_DIR" && yarn install && yarn build)
-  sudo mkdir -p "$WEB_ROOT"
-  sudo rsync -ah --delete "$FRONTEND_DIR/build/" "$WEB_ROOT/"
-}
+if ! command -v yarn &> /dev/null; then
+    echo "Installing Yarn..."
+    sudo npm install -g yarn
+fi
 
-ensure_caddy() {
-  if ! command -v caddy >/dev/null 2>&1; then
-    echo "[deploy] Installing Caddy"
-    sudo apt update
-    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-    sudo apt update
-    sudo apt install -y caddy
-  fi
-  if [ -f "$PROJECT_DIR/deploy/Caddyfile" ]; then
-    sudo install -m 0644 "$PROJECT_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile
-    sudo systemctl enable --now caddy
-    sudo systemctl restart caddy
-  fi
-}
+# Install dependencies and build
+echo "Installing frontend dependencies..."
+yarn install --frozen-lockfile
 
-ensure_backend_service() {
-  echo "[deploy] Ensuring systemd service $SERVICE_NAME"
-  # Create a unit if not present or if template changed
-  if [ -f "$PROJECT_DIR/deploy/backend.service" ]; then
-    sudo install -m 0644 "$PROJECT_DIR/deploy/backend.service" \
-      "/etc/systemd/system/${SERVICE_NAME}.service"
-  else
-    # Fallback minimal unit
-    sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" >/dev/null <<UNIT
+echo "Building frontend..."
+yarn build
+
+# Setup Nginx configuration
+echo "=== Setting up Nginx ==="
+sudo tee /etc/nginx/sites-available/dicty-app << 'EOF'
+server {
+    listen 80;
+    server_name 95.179.242.134;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # Serve frontend static files
+    location / {
+        root /home/dictyapp/dicty_resolwe_server/frontend/build;
+        try_files $uri $uri/ /index.html;
+        
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # Proxy API requests to backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Increase timeout for long-running requests
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+    }
+
+    # Serve Django admin
+    location /admin/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Serve Django static files
+    location /static/ {
+        alias /home/dictyapp/dicty_resolwe_server/backend/staticfiles/;
+        expires 1y;
+        add_header Cache-Control "public";
+    }
+
+    # WebSocket support for Django Channels (if needed)
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Security - deny access to sensitive files
+    location ~ /\. {
+        deny all;
+    }
+    
+    location ~ /(\.git|node_modules|venv) {
+        deny all;
+    }
+}
+EOF
+
+# Enable the site
+sudo ln -sf /etc/nginx/sites-available/dicty-app /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test nginx configuration
+sudo nginx -t
+
+# Create systemd service for the Django app
+echo "=== Creating systemd service ==="
+sudo tee /etc/systemd/system/$SERVICE_NAME.service << EOF
 [Unit]
-Description=Dicty Resolwe Backend (Daphne)
-After=network.target docker.service
+Description=Dicty Resolwe Server Django Application
+After=network.target
+Requires=docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=$DJANGO_DIR
-EnvironmentFile=$DJANGO_DIR/.env
-ExecStart=$VENV_DIR/bin/daphne -b 0.0.0.0 -p 8000 resolwe_server.asgi:application
+User=dictyapp
+Group=dictyapp
+WorkingDirectory=$BACKEND_DIR/resolwe_server
+Environment=PATH=$BACKEND_DIR/venv/bin
+ExecStart=$BACKEND_DIR/venv/bin/python manage.py runserver 0.0.0.0:8000
 Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-UNIT
-  fi
-  sudo systemctl daemon-reload
-  sudo systemctl enable "$SERVICE_NAME"
-  sudo systemctl restart "$SERVICE_NAME"
-}
+EOF
 
-main() {
-  update_repo
-  ensure_python
-  setup_backend
-  build_frontend
-  ensure_caddy
-  ensure_listener_keys
-  ensure_backend_service
-  echo "[deploy] Done. Backend service: $SERVICE_NAME; Web root: $WEB_ROOT"
-}
+# Reload systemd and start services
+echo "=== Starting services ==="
+sudo systemctl daemon-reload
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl start $SERVICE_NAME
+sudo systemctl enable nginx
+sudo systemctl start nginx
 
-main "$@"
+# Collect static files
+echo "=== Collecting static files ==="
+cd $BACKEND_DIR/resolwe_server
+source ../venv/bin/activate
+python manage.py collectstatic --noinput
 
+# Wait for services to start
+echo "=== Waiting for services to start ==="
+sleep 10
 
+# Check service status
+echo "=== Checking service status ==="
+sudo systemctl status $SERVICE_NAME --no-pager -l
+sudo systemctl status nginx --no-pager -l
+
+# Check if application is responding
+echo "=== Testing application ==="
+if curl -f http://localhost:8000/api/ > /dev/null 2>&1; then
+    echo "✅ Backend API is responding"
+else
+    echo "❌ Backend API is not responding"
+fi
+
+if curl -f http://localhost/ > /dev/null 2>&1; then
+    echo "✅ Frontend is responding"
+else
+    echo "❌ Frontend is not responding"
+fi
+
+echo "=== Deployment completed ==="
+echo "Application should be available at: http://95.179.242.134"
+echo "Django admin available at: http://95.179.242.134/admin"
+echo ""
+echo "Check logs with:"
+echo "  sudo journalctl -u $SERVICE_NAME -f"
+echo "  sudo tail -f /var/log/nginx/error.log"
