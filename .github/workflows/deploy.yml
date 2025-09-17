@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy Dicty Resolwe Server
 
 on:
   push:
@@ -6,143 +6,231 @@ on:
   workflow_dispatch:
 
 jobs:
+  security-scan:
+    uses: ./.github/workflows/00-guard-no-dotenv.yml
+
   deploy:
+    needs: security-scan
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.VPS_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-        chmod 600 ~/.ssh/id_ed25519
-        if [ -n "${{ secrets.VPS_HOST_KEY }}" ]; then
-          echo "${{ secrets.VPS_HOST_KEY }}" > ~/.ssh/known_hosts
-        else
-          ssh-keyscan -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-        fi
-    
-    - name: Test SSH Connection
-      run: |
-        ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p ${{ secrets.VPS_SSH_PORT || '22' }} -i ~/.ssh/id_ed25519 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'echo "SSH connection successful"'
-    
-    - name: Upload deployment files
-      run: |
-        # Upload deploy directory
-        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
-          deploy/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/deploy/
-        
-        # Upload backend code (exclude data, cache, venv)
-        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
-          --exclude='data/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='venv/' \
-          backend/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/backend/
-        
-        # Upload frontend source (we'll build on GitHub Actions)
-        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
-          --exclude='node_modules/' --exclude='build/' \
-          frontend/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/frontend/
-    
-    - name: Setup Node.js for frontend build
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'yarn'
-        cache-dependency-path: frontend/yarn.lock
-    
-    - name: Build frontend
-      run: |
-        cd frontend
-        yarn install --immutable
-        yarn build
-    
-    - name: Upload built frontend
-      run: |
-        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
-          frontend/build/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/www/dicty/
-    
-    - name: Create environment files
-      run: |
-        # Create database environment file
-        cat > deploy/db.env << 'EOF'
-        POSTGRES_DB=${{ secrets.DB_NAME }}
-        POSTGRES_USER=${{ secrets.DB_USER }}
-        POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
-        EOF
-        
-        # Create backend environment file
-        cat > deploy/backend.env << 'EOF'
-        SECRET_KEY=${{ secrets.SECRET_KEY }}
-        DEBUG=False
-        ALLOWED_HOSTS=${{ secrets.VPS_HOST }},127.0.0.1,localhost
-        DB_NAME=${{ secrets.DB_NAME }}
-        DB_USER=${{ secrets.DB_USER }}
-        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-        DB_HOST=127.0.0.1
-        DB_PORT=5432
-        ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}
-        ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-        EOF
-    
-    - name: Upload environment files
-      run: |
-        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'mkdir -p /home/$USER/dicty_env'
-        scp -i ~/.ssh/id_ed25519 -P ${{ secrets.VPS_SSH_PORT || '22' }} deploy/db.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_env/
-        scp -i ~/.ssh/id_ed25519 -P ${{ secrets.VPS_SSH_PORT || '22' }} deploy/backend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_env/
-    
-    - name: Deploy database
-      run: |
-        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
-          cd /home/$USER/dicty_resolwe_server/deploy/scripts
-          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
-            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
-            echo "$PW" | sudo -S -p "" -v
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_HOST_KEY:-}" ]; then
+            echo "$VPS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           fi
-          bash db_up.sh
-        '
-    
-    - name: Deploy backend
-      run: |
-        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
-          cd /home/$USER/dicty_resolwe_server/deploy/scripts
-          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
-            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
-            echo "$PW" | sudo -S -p "" -v
-          fi
-          bash backend_deploy.sh
-        '
-    
-    - name: Install and start Caddy service
-      run: |
-        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
-          # Create logs directory
-          mkdir -p /home/$USER/logs
+          chmod 644 ~/.ssh/known_hosts
+
+      # === DATABASE SETUP ===
+      - name: Create DB env file
+        env:
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          : > deploy/db.env
+          printf 'DB_NAME=%s\n' "${DB_NAME:-resolwe}" >> deploy/db.env
+          printf 'DB_USER=%s\n' "${DB_USER:-resolwe}" >> deploy/db.env
+          printf 'DB_PASSWORD=%s\n' "${DB_PASSWORD:-resolwe}" >> deploy/db.env
+
+      - name: Deploy database
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
           
-          # Install Caddy systemd service
-          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
-            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
-            echo "$PW" | sudo -S -p "" -v
+          # Create directories and upload DB configs
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server/deploy/scripts'
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/docker-compose.db.yml "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/docker-compose.db.yml"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/db_up.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/scripts/db_up.sh"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/db.env "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/db.env"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'chmod +x /home/$USER/dicty_resolwe_server/deploy/scripts/db_up.sh'
+          
+          # Start database
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' -v; bash /home/\$USER/dicty_resolwe_server/deploy/scripts/db_up.sh"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/dicty_resolwe_server/deploy/scripts/db_up.sh'
           fi
-          sudo cp /home/$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/
-          sudo systemctl daemon-reload
-          sudo systemctl enable caddy
-          sudo systemctl restart caddy
-        '
-    
-    - name: Health check
-      run: |
-        sleep 10
-        echo "Testing frontend..."
-        curl -f http://${{ secrets.VPS_HOST }}/ > /dev/null
-        echo "✅ Frontend is responding"
-        
-        echo "Testing backend health..."
-        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
-          systemctl is-active --quiet dicty-backend && echo "✅ Backend service is running"
-          systemctl is-active --quiet caddy && echo "✅ Caddy service is running"
-          systemctl is-active --quiet postgresql || docker ps | grep -q postgres && echo "✅ Database is running"
-        '
-        
-        echo "🎉 Deployment completed successfully!"
-        echo "🌐 Site is available at: http://${{ secrets.VPS_HOST }}"
+
+      # === BACKEND SETUP ===
+      - name: Create backend env file
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEBUG: ${{ secrets.DEBUG }}
+          ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          : > deploy/backend.env
+          printf 'SECRET_KEY=%s\n' "${SECRET_KEY:-}" >> deploy/backend.env
+          printf 'DEBUG=%s\n' "${DEBUG:-false}" >> deploy/backend.env
+          printf 'ALLOWED_HOSTS=%s\n' "${ALLOWED_HOSTS:-localhost,127.0.0.1}" >> deploy/backend.env
+          printf 'DB_NAME=%s\n' "${DB_NAME:-resolwe}" >> deploy/backend.env
+          printf 'DB_USER=%s\n' "${DB_USER:-resolwe}" >> deploy/backend.env
+          printf 'DB_PASSWORD=%s\n' "${DB_PASSWORD:-resolwe}" >> deploy/backend.env
+          printf 'DB_HOST=%s\n' "${DB_HOST:-localhost}" >> deploy/backend.env
+          printf 'DB_PORT=%s\n' "${DB_PORT:-5432}" >> deploy/backend.env
+          printf 'ADMIN_USERNAME=%s\n' "${ADMIN_USERNAME:-admin}" >> deploy/backend.env
+          printf 'ADMIN_PASSWORD=%s\n' "${ADMIN_PASSWORD:-}" >> deploy/backend.env
+          printf 'CORS_ALLOWED_ORIGINS=%s\n' "${CORS_ALLOWED_ORIGINS:-}" >> deploy/backend.env
+
+      - name: Deploy backend
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          
+          # Create directories
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server/deploy/{scripts,systemd} /home/$USER/dicty_env'
+          
+          # Upload backend code (excluding data and __pycache__)
+          rsync -avz --delete --exclude 'data/' --exclude '__pycache__/' --exclude '*.pyc' --exclude 'venv/' -e "ssh -p $port -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" backend/ "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/backend/"
+          
+          # Upload deployment scripts and configs
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/backend_deploy.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/scripts/backend_deploy.sh"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/systemd/dicty-backend.service "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/systemd/dicty-backend.service"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/backend.env "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_env/backend.env"
+          
+          # Make scripts executable
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'chmod +x /home/$USER/dicty_resolwe_server/deploy/scripts/backend_deploy.sh'
+          
+          # Install systemd service
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' cp /home/\$USER/dicty_resolwe_server/deploy/systemd/dicty-backend.service /etc/systemd/system/"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo cp /home/$USER/dicty_resolwe_server/deploy/systemd/dicty-backend.service /etc/systemd/system/'
+          fi
+          
+          # Deploy backend
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' -v; bash /home/\$USER/dicty_resolwe_server/deploy/scripts/backend_deploy.sh"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/dicty_resolwe_server/deploy/scripts/backend_deploy.sh'
+          fi
+
+      # === FRONTEND SETUP ===
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          yarn install --immutable
+          yarn build
+
+      - name: Deploy frontend and Caddy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          
+          # Create web directory
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' mkdir -p /home/\$USER/www/dicty; echo \"\$PW\" | sudo -S -p '' chown -R \$USER:\$USER /home/\$USER/www"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo mkdir -p /home/$USER/www/dicty && sudo chown -R $USER:$USER /home/$USER/www'
+          fi
+          
+          # Upload built frontend files
+          rsync -avz --delete -e "ssh -p $port -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" frontend/build/ "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/www/dicty/"
+          
+          # Create directories and upload Caddy configs
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server/deploy/caddy /home/$USER/logs'
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/caddy/Caddyfile "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/caddy/Caddyfile"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/systemd/caddy.service "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/systemd/caddy.service"
+          
+          # Install and start Caddy service
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' systemctl stop caddy || true; echo \"\$PW\" | sudo -S -p '' cp /home/\$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/; echo \"\$PW\" | sudo -S -p '' systemctl daemon-reload; echo \"\$PW\" | sudo -S -p '' systemctl enable caddy; echo \"\$PW\" | sudo -S -p '' systemctl start caddy"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo systemctl stop caddy || true && sudo cp /home/$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable caddy && sudo systemctl start caddy'
+          fi
+
+      # === TESTING ===
+      - name: Test deployment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          
+          echo "Waiting for services to start..."
+          sleep 15
+          
+          # Check service status
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            echo "=== Backend Service Status ==="
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' systemctl status dicty-backend --no-pager -l || true"
+            echo "=== Caddy Service Status ==="
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "PW=\$(echo \"$pw_b64\" | base64 -d); echo \"\$PW\" | sudo -S -p '' systemctl status caddy --no-pager -l || true"
+          else
+            echo "=== Backend Service Status ==="
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo systemctl status dicty-backend --no-pager -l || true'
+            echo "=== Caddy Service Status ==="
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo systemctl status caddy --no-pager -l || true'
+          fi
+          
+          # Test frontend
+          echo "=== Testing Frontend ==="
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'curl -s http://127.0.0.1/ | head -5 || echo "Frontend test failed"'
+          
+          # Test API
+          echo "=== Testing API ==="
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'curl -s -H "Host: 95.179.242.134" http://127.0.0.1/api/ | head -5 || echo "API test failed"'
+          
+          echo ""
+          echo "🎉 Deployment complete! Site available at:"
+          echo "   http://95.179.242.134"
+          echo "   https://95.179.242.134 (HTTPS may take a few minutes to provision)"
