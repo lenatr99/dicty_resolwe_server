@@ -44,7 +44,7 @@ Add the private key to GitHub repository secrets:
 Clone the repository on the VPS:
 ```bash
 ssh dictyapp@95.179.242.134
-git clone https://github.com/ltrnavove/dicty_resolwe_server.git
+git clone https://github.com/lenatr99/dicty_resolwe_server.git
 cd dicty_resolwe_server
 chmod +x deploy/deploy.sh
 ./deploy/deploy.sh
@@ -157,7 +157,7 @@ docker system prune -f
 sudo rm -rf /home/dictyapp/dicty_resolwe_server
 
 # Re-run deployment
-git clone https://github.com/ltrnavove/dicty_resolwe_server.git
+git clone https://github.com/lenatr99/dicty_resolwe_server.git
 cd dicty_resolwe_server
 ./deploy/deploy.sh
 ```

@@ -23,7 +23,7 @@ cd $PROJECT_DIR
 if [ ! -d ".git" ]; then
     echo "Git repository not found. Cloning..."
     cd /home/dictyapp
-    git clone https://github.com/ltrnavove/dicty_resolwe_server.git
+    git clone https://github.com/lenatr99/dicty_resolwe_server.git
     cd dicty_resolwe_server
 else
     echo "Git repository found. Pulling latest changes..."
