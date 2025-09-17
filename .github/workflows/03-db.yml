@@ -1,0 +1,77 @@
+name: Deploy - 03 Database setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  db:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_HOST_KEY:-}" ]; then
+            echo "$VPS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Create DB env file locally
+        env:
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          : > deploy/db.env
+          printf 'DB_NAME=%s\n' "${DB_NAME:-resolwe}" >> deploy/db.env
+          printf 'DB_USER=%s\n' "${DB_USER:-resolwe}" >> deploy/db.env
+          printf 'DB_PASSWORD=%s\n' "${DB_PASSWORD:-resolwe}" >> deploy/db.env
+
+      - name: Upload DB compose, script, and env
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server/deploy/scripts'
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/docker-compose.db.yml "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/docker-compose.db.yml"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/db_up.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/scripts/db_up.sh"
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/db.env "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/deploy/db.env"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'chmod +x /home/$USER/dicty_resolwe_server/deploy/scripts/db_up.sh'
+
+      - name: Bring up database
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "echo \"$pw_b64\" | base64 -d | sudo -S -p '' bash /home/\$USER/dicty_resolwe_server/deploy/scripts/db_up.sh"
+          else
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/dicty_resolwe_server/deploy/scripts/db_up.sh'
+          fi
+
+

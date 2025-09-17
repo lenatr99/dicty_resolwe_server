@@ -41,6 +41,19 @@ if [ "$PKG_MGR" = apt ]; then
     sudo systemctl enable --now docker
   fi
 
+  # Ensure Compose plugin is present even if Docker was preinstalled
+  if ! docker compose version >/dev/null 2>&1; then
+    . /etc/os-release
+    DIST_ID="$ID"
+    DIST_CODENAME="$VERSION_CODENAME"
+    sudo install -m 0755 -d /etc/apt/keyrings || true
+    curl -fsSL https://download.docker.com/linux/${DIST_ID}/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg || true
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DIST_ID} ${DIST_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null || true
+    sudo apt-get update -y
+    sudo apt-get install -y docker-buildx-plugin docker-compose-plugin
+  fi
+
   # Python
   if ! command -v python3 >/dev/null 2>&1; then
     sudo apt-get install -y python3 python3-pip python3-venv
