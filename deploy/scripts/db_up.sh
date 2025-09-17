@@ -10,12 +10,27 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-# Free port 5432 if another Docker container is using it
-conflict_id=$(docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | awk '/127\.0\.0\.1:5432->|0\.0\.0\.0:5432->/ {print $1; exit}') || true
-if [ -n "${conflict_id:-}" ]; then
-  echo "Detected a container using host port 5432. Stopping container $conflict_id to free the port..."
-  docker stop "$conflict_id" || true
-  # Give Docker a moment to release the port
+# Free port 5432 if in use by Docker or host service
+# 1) Stop any docker containers publishing 5432
+conflict_ids=$(docker ps --filter "publish=5432" -q || true)
+if [ -n "${conflict_ids:-}" ]; then
+  echo "Stopping containers publishing host port 5432: $conflict_ids"
+  docker stop $conflict_ids || true
+  sleep 2
+fi
+
+# 2) If still in use by host process (e.g., system PostgreSQL), stop it gracefully
+if command -v ss >/dev/null 2>&1; then
+  in_use=$(sudo ss -ltnp 2>/dev/null | awk '$4 ~ /:5432$/ {print $0; exit}') || true
+else
+  in_use=$(sudo lsof -iTCP:5432 -sTCP:LISTEN -Pn 2>/dev/null | sed -n '2p') || true
+fi
+
+if [ -n "${in_use:-}" ]; then
+  echo "Port 5432 is in use by host process:"
+  echo "$in_use"
+  echo "Attempting to stop system PostgreSQL service if running..."
+  sudo systemctl stop postgresql || sudo systemctl stop postgresql@16-main || sudo systemctl stop postgresql-16 || true
   sleep 2
 fi
 
