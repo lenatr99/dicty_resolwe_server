@@ -28,11 +28,12 @@ set -a
 source "$ENV_FILE" || true
 set +a
 
-$comp_cmd -f "$COMPOSE_FILE" up -d
+$comp_cmd --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 
 echo "Waiting for database to be ready..."
 for i in {1..30}; do
-  if docker ps --format '{{.Names}}' | grep -q '^postgres$' && docker exec postgres pg_isready -U "${DB_USER:-resolwe}" >/dev/null 2>&1; then
+  cname=$(docker ps --format '{{.Names}}' | grep '^.*postgres.*$' | head -n1 || true)
+  if [ -n "$cname" ] && docker exec "$cname" pg_isready -U "${DB_USER:-resolwe}" >/dev/null 2>&1; then
     echo "Database is ready!"
     exit 0
   fi
