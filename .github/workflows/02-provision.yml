@@ -1,0 +1,40 @@
+name: Deploy - 02 Provision VPS base
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          port=${VPS_SSH_PORT:-22}
+          ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Provision Docker, Compose, Python, Node.js, and Caddy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port=${VPS_SSH_PORT:-22}
+          scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/provision_base.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/provision_base.sh"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/provision_base.sh'
+
+
