@@ -1,0 +1,32 @@
+[Unit]
+Description=Dicty Resolwe Backend (Gunicorn)
+After=network.target
+Requires=docker.service
+
+[Service]
+Type=notify
+User=dictyapp
+Group=dictyapp
+WorkingDirectory=/home/dictyapp/dicty_resolwe_server/backend/resolwe_server
+Environment=PATH=/home/dictyapp/dicty_resolwe_server/backend/venv/bin
+EnvironmentFile=-/home/dictyapp/dicty_env/backend.env
+ExecStart=/home/dictyapp/dicty_resolwe_server/backend/venv/bin/gunicorn \
+    --bind 127.0.0.1:8000 \
+    --workers 3 \
+    --timeout 120 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    --preload \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level info \
+    resolwe_server.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
