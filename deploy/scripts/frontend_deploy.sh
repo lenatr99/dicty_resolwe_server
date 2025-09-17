@@ -14,27 +14,28 @@ echo "Build output: $BUILD_OUTPUT_DIR"
 # Ensure we're in the frontend directory
 cd "$FRONTEND_DIR"
 
-# Check if Node.js and npm are available
+# Check if Node.js and yarn are available
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is required but not found" >&2
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required but not found" >&2
-  exit 1
+# Install yarn if not available
+if ! command -v yarn >/dev/null 2>&1; then
+  echo "Installing yarn..."
+  npm install -g yarn
 fi
 
 echo "Node version: $(node -v)"
-echo "npm version: $(npm -v)"
+echo "Yarn version: $(yarn -v)"
 
 # Install dependencies
 echo "Installing frontend dependencies..."
-npm ci --only=production
+yarn install --frozen-lockfile --production=false
 
 # Build the application
 echo "Building frontend for production..."
-npm run build
+yarn build
 
 # Create output directory
 sudo mkdir -p "$BUILD_OUTPUT_DIR"
