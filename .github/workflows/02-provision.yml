@@ -42,7 +42,8 @@ jobs:
           port=${VPS_SSH_PORT:-22}
           scp -P "$port" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes deploy/scripts/provision_base.sh "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/provision_base.sh"
           if [ -n "${VPS_SUDO_PASSWORD:-}" ]; then
-            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'SUDO_PASS="${VPS_SUDO_PASSWORD}" bash -lc "echo \"$SUDO_PASS\" | sudo -S bash /home/$USER/provision_base.sh"'
+            pw_b64=$(printf '%s' "$VPS_SUDO_PASSWORD" | base64)
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "echo \"$pw_b64\" | base64 -d | sudo -S -p '' bash /home/\$USER/provision_base.sh"
           else
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash /home/$USER/provision_base.sh'
           fi
