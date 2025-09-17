@@ -70,7 +70,7 @@ jobs:
           port=${VPS_SSH_PORT:-22}
           
           # Create directories
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server /home/$USER/dicty_env'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'mkdir -p /home/$USER/dicty_resolwe_server/deploy/{scripts,systemd} /home/$USER/dicty_env'
           
           # Upload backend code (excluding data and __pycache__)
           rsync -avz --delete --exclude 'data/' --exclude '__pycache__/' --exclude '*.pyc' --exclude 'venv/' -e "ssh -p $port -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" backend/ "${VPS_USER}@${VPS_HOST}:/home/${VPS_USER}/dicty_resolwe_server/backend/"
