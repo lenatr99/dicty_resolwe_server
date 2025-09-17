@@ -1,3 +1,21 @@
 backend/data/
 *.h5ad
 *.h5ad.gz
+
+# Secrets and environment files (do not commit)
+.env
+**/.env
+backend/resolwe_server/.env
+deploy/db.env
+*.env.local
+*.env.development
+*.env.production
+*.env.test
+
+# Private keys and certs (do not commit)
+**/id_rsa*
+**/id_ed25519*
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12

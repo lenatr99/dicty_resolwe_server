@@ -9,16 +9,7 @@
 
 # Main site - replace with your domain
 :80, :443 {
-    # Serve static frontend files
-    root * /home/dictyapp/www/dicty
-    
-    # Enable file serving
-    file_server
-    
-    # Try files first, then fallback to index.html for SPA routing
-    try_files {path} {path}/ /index.html
-    
-    # Proxy API requests to Django backend
+    # Proxy API requests to Django backend (must come first)
     handle /api/* {
         reverse_proxy 127.0.0.1:8000
     }
@@ -28,9 +19,16 @@
         reverse_proxy 127.0.0.1:8000
     }
     
-    # Proxy static files requests to Django backend
+    # Proxy Django static files to backend
     handle /static/* {
         reverse_proxy 127.0.0.1:8000
+    }
+    
+    # Serve frontend static files for everything else
+    handle /* {
+        root * /home/dictyapp/www/dicty
+        try_files {path} {path}/ /index.html
+        file_server
     }
     
     # Add security headers

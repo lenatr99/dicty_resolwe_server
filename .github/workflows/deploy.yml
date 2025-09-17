@@ -1,0 +1,148 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.VPS_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        if [ -n "${{ secrets.VPS_HOST_KEY }}" ]; then
+          echo "${{ secrets.VPS_HOST_KEY }}" > ~/.ssh/known_hosts
+        else
+          ssh-keyscan -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+        fi
+    
+    - name: Test SSH Connection
+      run: |
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p ${{ secrets.VPS_SSH_PORT || '22' }} -i ~/.ssh/id_ed25519 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'echo "SSH connection successful"'
+    
+    - name: Upload deployment files
+      run: |
+        # Upload deploy directory
+        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
+          deploy/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/deploy/
+        
+        # Upload backend code (exclude data, cache, venv)
+        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
+          --exclude='data/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='venv/' \
+          backend/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/backend/
+        
+        # Upload frontend source (we'll build on GitHub Actions)
+        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
+          --exclude='node_modules/' --exclude='build/' \
+          frontend/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_resolwe_server/frontend/
+    
+    - name: Setup Node.js for frontend build
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'yarn'
+        cache-dependency-path: frontend/yarn.lock
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        yarn install --immutable
+        yarn build
+    
+    - name: Upload built frontend
+      run: |
+        rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }}" \
+          frontend/build/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/www/dicty/
+    
+    - name: Create environment files
+      run: |
+        # Create database environment file
+        cat > deploy/db.env << 'EOF'
+        POSTGRES_DB=${{ secrets.DB_NAME }}
+        POSTGRES_USER=${{ secrets.DB_USER }}
+        POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
+        EOF
+        
+        # Create backend environment file
+        cat > deploy/backend.env << 'EOF'
+        SECRET_KEY=${{ secrets.SECRET_KEY }}
+        DEBUG=False
+        ALLOWED_HOSTS=${{ secrets.VPS_HOST }},127.0.0.1,localhost
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USER=${{ secrets.DB_USER }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        DB_HOST=127.0.0.1
+        DB_PORT=5432
+        ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}
+        ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+        EOF
+    
+    - name: Upload environment files
+      run: |
+        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'mkdir -p /home/$USER/dicty_env'
+        scp -i ~/.ssh/id_ed25519 -P ${{ secrets.VPS_SSH_PORT || '22' }} deploy/db.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_env/
+        scp -i ~/.ssh/id_ed25519 -P ${{ secrets.VPS_SSH_PORT || '22' }} deploy/backend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/${{ secrets.VPS_USER }}/dicty_env/
+    
+    - name: Deploy database
+      run: |
+        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+          cd /home/$USER/dicty_resolwe_server/deploy/scripts
+          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
+            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
+            echo "$PW" | sudo -S -p "" -v
+          fi
+          bash db_up.sh
+        '
+    
+    - name: Deploy backend
+      run: |
+        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+          cd /home/$USER/dicty_resolwe_server/deploy/scripts
+          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
+            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
+            echo "$PW" | sudo -S -p "" -v
+          fi
+          bash backend_deploy.sh
+        '
+    
+    - name: Install and start Caddy service
+      run: |
+        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+          # Create logs directory
+          mkdir -p /home/$USER/logs
+          
+          # Install Caddy systemd service
+          if [ -n "${{ secrets.VPS_SUDO_PASSWORD }}" ]; then
+            PW=$(echo "${{ secrets.VPS_SUDO_PASSWORD }}" | base64 -d)
+            echo "$PW" | sudo -S -p "" -v
+          fi
+          sudo cp /home/$USER/dicty_resolwe_server/deploy/systemd/caddy.service /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl enable caddy
+          sudo systemctl restart caddy
+        '
+    
+    - name: Health check
+      run: |
+        sleep 10
+        echo "Testing frontend..."
+        curl -f http://${{ secrets.VPS_HOST }}/ > /dev/null
+        echo "✅ Frontend is responding"
+        
+        echo "Testing backend health..."
+        ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_SSH_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+          systemctl is-active --quiet dicty-backend && echo "✅ Backend service is running"
+          systemctl is-active --quiet caddy && echo "✅ Caddy service is running"
+          systemctl is-active --quiet postgresql || docker ps | grep -q postgres && echo "✅ Database is running"
+        '
+        
+        echo "🎉 Deployment completed successfully!"
+        echo "🌐 Site is available at: http://${{ secrets.VPS_HOST }}"

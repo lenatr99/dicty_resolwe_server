@@ -1,0 +1,23 @@
+name: Guard - Block committed env/secret files
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find forbidden files
+        run: |
+          set -euo pipefail
+          forbidden_patterns='(^|/)\.env($|\.)|(^|/)db\.env$|(^|/)id_(rsa|ed25519)(|\.pub)$|\.pem$|\.key$|\.p(12|fx)$'
+          if git ls-files -z | tr '\0' '\n' | grep -E "$forbidden_patterns"; then
+            echo "::error::Forbidden env/secret files detected in repo. Remove them before pushing."
+            exit 1
+          fi
+
