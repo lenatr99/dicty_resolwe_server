@@ -4,11 +4,11 @@
 {
     # Global options
     admin off
-    auto_https on
+    # auto_https is enabled by default for domain names
 }
 
 # Main site - replace with your domain
-95.179.242.134, localhost {
+:80, :443 {
     # Serve static frontend files
     root * /home/dictyapp/www/dicty
     
