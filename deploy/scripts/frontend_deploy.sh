@@ -33,8 +33,13 @@ echo "Yarn version: $(yarn -v)"
 echo "Installing frontend dependencies..."
 yarn install --immutable
 
-# Build the application
+# Build the application with memory constraints
 echo "Building frontend for production..."
+# Use less memory for the build on low-memory VPS
+export NODE_OPTIONS="--max-old-space-size=1536"
+# Enable swap usage for build
+sudo swapon -a
+# Build with single process to reduce memory usage
 yarn build
 
 # Create output directory
