@@ -30,11 +30,14 @@ if ! command -v python3.11 >/dev/null 2>&1; then
   sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
 fi
 
-# Create/update virtual environment with Python 3.11
-if [ ! -d "$VENV_DIR" ]; then
-  echo "Creating Python 3.11 virtual environment..."
-  python3.11 -m venv "$VENV_DIR"
+# Remove old venv if it exists and recreate with Python 3.11
+if [ -d "$VENV_DIR" ]; then
+  echo "Removing existing virtual environment..."
+  rm -rf "$VENV_DIR"
 fi
+
+echo "Creating Python 3.11 virtual environment..."
+python3.11 -m venv "$VENV_DIR"
 
 # Activate virtual environment
 source "$VENV_DIR/bin/activate"
