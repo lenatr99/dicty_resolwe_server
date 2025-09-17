@@ -36,13 +36,18 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           port=${VPS_SSH_PORT:-22}
-          ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "${VPS_HOST_KEY:-}" ]; then
+            echo "$VPS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
           chmod 644 ~/.ssh/known_hosts
 
       - name: Test SSH connection
