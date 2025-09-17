@@ -31,7 +31,7 @@ echo "Yarn version: $(yarn -v)"
 
 # Install dependencies
 echo "Installing frontend dependencies..."
-yarn install --frozen-lockfile --production=false
+yarn install --immutable
 
 # Build the application
 echo "Building frontend for production..."
