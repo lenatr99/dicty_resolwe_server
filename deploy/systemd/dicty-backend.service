@@ -4,11 +4,12 @@ After=network.target
 Requires=docker.service
 
 [Service]
-Type=notify
+Type=exec
 User=dictyapp
 Group=dictyapp
 WorkingDirectory=/home/dictyapp/dicty_resolwe_server/backend/resolwe_server
-Environment=PATH=/home/dictyapp/dicty_resolwe_server/backend/venv/bin
+Environment=PATH=/home/dictyapp/dicty_resolwe_server/backend/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/dictyapp/dicty_resolwe_server/backend/resolwe_server
 EnvironmentFile=-/home/dictyapp/dicty_env/backend.env
 ExecStart=/home/dictyapp/dicty_resolwe_server/backend/venv/bin/gunicorn \
     --bind 127.0.0.1:8000 \
