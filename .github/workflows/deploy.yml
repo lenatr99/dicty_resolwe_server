@@ -44,6 +44,12 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_APP_VERSION: ${{ github.sha }}
+          VITE_APP_NAME: dictyExpress
+          VITE_APP_SENTRY_URL: https://e0a554a693f641a6923a4240a2a64dfb@o74924.ingest.sentry.io/5265645
+          INLINE_RUNTIME_CHUNK: false
+          BROWSER: none
         run: yarn build
 
       - name: Configure SSH
@@ -87,6 +93,8 @@ jobs:
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          LISTENER_PRIVATE_KEY: ${{ secrets.LISTENER_PRIVATE_KEY }}
+          LISTENER_PUBLIC_KEY: ${{ secrets.LISTENER_PUBLIC_KEY }}    
         run: |
           set -euo pipefail
           mkdir -p deploy
@@ -99,7 +107,7 @@ jobs:
           
           # Create backend env file
           : > deploy/backend.env
-          printf 'SECRET_KEY=%s\n' "${SECRET_KEY:-}" >> deploy/backend.env
+          printf 'SECRET_KEY=%q\n' "${SECRET_KEY:-}" >> deploy/backend.env
           printf 'DEBUG=%s\n' "${DEBUG:-false}" >> deploy/backend.env
           printf 'ALLOWED_HOSTS=%s\n' "${ALLOWED_HOSTS:-localhost,127.0.0.1}" >> deploy/backend.env
           printf 'DB_NAME=%s\n' "${DB_NAME:-resolwe}" >> deploy/backend.env
@@ -108,8 +116,10 @@ jobs:
           printf 'DB_HOST=%s\n' "${DB_HOST:-localhost}" >> deploy/backend.env
           printf 'DB_PORT=%s\n' "${DB_PORT:-5432}" >> deploy/backend.env
           printf 'ADMIN_USERNAME=%s\n' "${ADMIN_USERNAME:-admin}" >> deploy/backend.env
-          printf 'ADMIN_PASSWORD=%s\n' "${ADMIN_PASSWORD:-}" >> deploy/backend.env
+          printf 'ADMIN_PASSWORD=%q\n' "${ADMIN_PASSWORD:-}" >> deploy/backend.env
           printf 'CORS_ALLOWED_ORIGINS=%s\n' "${CORS_ALLOWED_ORIGINS:-}" >> deploy/backend.env
+          printf 'LISTENER_PRIVATE_KEY=%q\n' "${LISTENER_PRIVATE_KEY:-}" >> deploy/backend.env
+          printf 'LISTENER_PUBLIC_KEY=%q\n' "${LISTENER_PUBLIC_KEY:-}" >> deploy/backend.env
 
       - name: Setup database
         env:
