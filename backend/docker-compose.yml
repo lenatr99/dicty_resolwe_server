@@ -7,20 +7,23 @@ services:
       POSTGRES_DB: ${DB_NAME:-resolwe}
       POSTGRES_USER: ${DB_USER:-resolwe}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-resolwe}
+      TZ: UTC
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"    # bind locally only
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U resolwe"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-resolwe} -d ${DB_NAME:-resolwe} || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    stop_grace_period: 60s
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"    # bind locally only
     volumes:
       - redis_data:/data
     healthcheck:
@@ -28,18 +31,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+    stop_grace_period: 30s
 
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-change-this-password}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
-      - "127.0.0.1:5050:80"  # Bind to localhost only
+      - "127.0.0.1:5050:80"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
 
 volumes:
   postgres_data:
