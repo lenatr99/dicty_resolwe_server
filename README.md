@@ -50,3 +50,15 @@ cd backend/resolwe_server
 python test3.py
 ```
 
+## Start frontend
+
+```bash
+cd frontend
+yarn start
+```
+
+## Copy local data to backend
+```bash
+cd backend
+./reload_database.sh
+```
